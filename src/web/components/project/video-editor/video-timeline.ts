@@ -17,7 +17,8 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 片段容器: HTMLElement | null = null
   private 波形容器: HTMLElement | null = null
   private ws: WaveSurfer | null = null
-  private 当前缩放: number = 20
+  private 默认缩放: number = 10
+  private 当前缩放: number = this.默认缩放
   private 是否正在拖拽进度: boolean = false
   private 是否正在滚动: boolean = false
   private 波形加载遮罩: HTMLElement | null = null
@@ -452,7 +453,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
 
       if (this.ws !== null) {
-        this.当前缩放 = 20
+        this.当前缩放 = this.默认缩放
         await this.ws.load(url, 峰值 !== undefined ? [峰值] : undefined)
         this.ws.setTime(0)
         this.执行缩放(this.当前缩放)
