@@ -317,20 +317,26 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
     }
 
-    // 滚轮缩放
+    // 滚轮交互 (竖向缩放, 横向移动)
     this.轨道容器.onwheel = (e: WheelEvent): void => {
       if (this.ws === null || this.轨道容器 === null) return
       e.preventDefault()
 
-      let 容器矩形 = this.轨道容器.getBoundingClientRect()
-      let 相对X = e.clientX - 容器矩形.left
-      let 时长 = this.ws.getDuration()
-      if (时长 <= 0) return
-      let 锚点时间 = ((相对X + this.轨道容器.scrollLeft) / (时长 * this.当前缩放)) * 时长
+      // 如果横向滚动分量较大，执行移动
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        this.轨道容器.scrollLeft += e.deltaX
+      } else if (Math.abs(e.deltaY) > 0) {
+        // 否则执行缩放
+        let 容器矩形 = this.轨道容器.getBoundingClientRect()
+        let 相对X = e.clientX - 容器矩形.left
+        let 时长 = this.ws.getDuration()
+        if (时长 <= 0) return
+        let 锚点时间 = ((相对X + this.轨道容器.scrollLeft) / (时长 * this.当前缩放)) * 时长
 
-      let 增量 = e.deltaY > 0 ? 0.9 : 1.1
-      let 新缩放 = Math.min(1000, Math.max(10, this.当前缩放 * 增量))
-      this.执行缩放(新缩放, 锚点时间, 相对X)
+        let 增量 = e.deltaY > 0 ? 0.9 : 1.1
+        let 新缩放 = Math.min(1000, Math.max(10, this.当前缩放 * 增量))
+        this.执行缩放(新缩放, 锚点时间, 相对X)
+      }
     }
 
     this.轨道容器.oncontextmenu = (e: MouseEvent): void => {
