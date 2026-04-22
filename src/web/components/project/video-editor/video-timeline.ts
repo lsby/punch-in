@@ -18,11 +18,8 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 波形容器: HTMLElement | null = null
   private ws: WaveSurfer | null = null
   private 当前缩放: number = 20
-  private 缩放起始X: number = 0
-  private 缩放起始值: number = 0
-  private 是否正在缩放: boolean = false
-  private 缩放请求ID: number | null = null
-  private 目标缩放值: number = 0
+  private 是否正在拖拽进度: boolean = false
+  private 是否正在滚动: boolean = false
   private 波形加载遮罩: HTMLElement | null = null
 
   private 预览视频: HTMLVideoElement | null = null
@@ -224,7 +221,8 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
         this.轨道容器 === null ||
         this.ws === null ||
         this.预览视频 === null ||
-        this.是否正在缩放
+        this.是否正在拖拽进度 ||
+        this.是否正在滚动
       )
         return
       this.预览窗.style.display = 'flex'
@@ -249,36 +247,93 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
     }
 
-    // 缩放逻辑
-    this.刻度尺容器.onmousedown = (e: MouseEvent): void => {
-      this.是否正在缩放 = true
-      this.缩放起始X = e.clientX
-      this.缩放起始值 = this.当前缩放
-      if (this.刻度尺容器 !== null) this.刻度尺容器.style.cursor = 'col-resize'
-      if (this.预览窗 !== null) this.预览窗.style.display = 'none'
+    // 鼠标交互逻辑 (点击/拖动控制进度, 右键滚动)
+    this.轨道容器.onmousedown = (e: MouseEvent): void => {
+      if (this.ws === null || this.轨道容器 === null) return
+      let 容器矩形 = this.轨道容器.getBoundingClientRect()
+      let 时长 = this.ws.getDuration()
+      if (时长 <= 0) return
 
-      let 处理移动 = (e: MouseEvent): void => {
-        if (!this.是否正在缩放) return
-        let 偏移 = e.clientX - this.缩放起始X
-        let 新缩放 = Math.min(1000, Math.max(10, this.缩放起始值 + 偏移 * 0.5))
-        this.目标缩放值 = 新缩放
-        if (this.缩放请求ID === null) {
-          this.缩放请求ID = requestAnimationFrame(() => {
-            this.执行缩放(this.目标缩放值)
-            this.缩放请求ID = null
+      let 获取当前时间 = (e: MouseEvent): number => {
+        if (this.轨道容器 === null) throw new Error('轨道容器不存在')
+        let 相对X = e.clientX - 容器矩形.left + this.轨道容器.scrollLeft
+        let 时间 = (相对X / (时长 * this.当前缩放)) * 时长
+        return Math.max(0, Math.min(时长, 时间))
+      }
+
+      if (e.button === 0) {
+        // 左键: 进度拖拽
+        this.是否正在拖拽进度 = true
+        if (this.预览窗 !== null) this.预览窗.style.display = 'none'
+
+        let 执行更新 = (event: MouseEvent): void => {
+          let 时间 = 获取当前时间(event)
+          this.派发事件('进度跳转', 时间)
+          if (this.ws !== null) this.ws.setTime(时间)
+        }
+
+        执行更新(e)
+
+        let 拖拽请求ID: number | null = null
+        let 处理移动 = (moveEvent: MouseEvent): void => {
+          if (拖拽请求ID !== null) return
+          拖拽请求ID = requestAnimationFrame(() => {
+            拖拽请求ID = null
+            if (this.是否正在拖拽进度) 执行更新(moveEvent)
           })
         }
-      }
+        let 处理抬起 = (): void => {
+          if (拖拽请求ID !== null) {
+            cancelAnimationFrame(拖拽请求ID)
+            拖拽请求ID = null
+          }
+          this.是否正在拖拽进度 = false
+          window.removeEventListener('mousemove', 处理移动)
+          window.removeEventListener('mouseup', 处理抬起)
+        }
+        window.addEventListener('mousemove', 处理移动)
+        window.addEventListener('mouseup', 处理抬起)
+      } else if (e.button === 2) {
+        // 右键: 滚动
+        this.是否正在滚动 = true
+        if (this.预览窗 !== null) this.预览窗.style.display = 'none'
+        let 起始X = e.clientX
+        let 起始滚动 = this.轨道容器.scrollLeft
 
-      let 处理抬起 = (): void => {
-        this.是否正在缩放 = false
-        if (this.刻度尺容器 !== null) this.刻度尺容器.style.cursor = 'default'
-        window.removeEventListener('mousemove', 处理移动)
-        window.removeEventListener('mouseup', 处理抬起)
+        let 处理移动 = (e: MouseEvent): void => {
+          if (this.轨道容器 === null) return
+          if (this.是否正在滚动) {
+            let 偏移 = e.clientX - 起始X
+            this.轨道容器.scrollLeft = 起始滚动 - 偏移
+          }
+        }
+        let 处理抬起 = (): void => {
+          this.是否正在滚动 = false
+          window.removeEventListener('mousemove', 处理移动)
+          window.removeEventListener('mouseup', 处理抬起)
+        }
+        window.addEventListener('mousemove', 处理移动)
+        window.addEventListener('mouseup', 处理抬起)
       }
+    }
 
-      window.addEventListener('mousemove', 处理移动)
-      window.addEventListener('mouseup', 处理抬起)
+    // 滚轮缩放
+    this.轨道容器.onwheel = (e: WheelEvent): void => {
+      if (this.ws === null || this.轨道容器 === null) return
+      e.preventDefault()
+
+      let 容器矩形 = this.轨道容器.getBoundingClientRect()
+      let 相对X = e.clientX - 容器矩形.left
+      let 时长 = this.ws.getDuration()
+      if (时长 <= 0) return
+      let 锚点时间 = ((相对X + this.轨道容器.scrollLeft) / (时长 * this.当前缩放)) * 时长
+
+      let 增量 = e.deltaY > 0 ? 0.9 : 1.1
+      let 新缩放 = Math.min(1000, Math.max(10, this.当前缩放 * 增量))
+      this.执行缩放(新缩放, 锚点时间, 相对X)
+    }
+
+    this.轨道容器.oncontextmenu = (e: MouseEvent): void => {
       e.preventDefault()
     }
 
@@ -322,6 +377,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       height: this.波形容器.offsetHeight,
       minPxPerSec: 20,
       fillParent: false,
+      interact: false,
       autoScroll: true,
       plugins: [
         TimelinePlugin.create({
@@ -332,26 +388,22 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
         }),
       ],
     })
-
-    this.ws.on('interaction', (newTime: number) => {
-      this.派发事件('进度跳转', newTime)
-    })
   }
 
-  private 执行缩放(值: number): void {
+  private 执行缩放(值: number, 锚点时间?: number, 锚点偏移?: number): void {
     if (this.ws === null || this.轨道容器 === null) return
 
     let 旧缩放 = this.当前缩放
-    let 当前时间 = this.ws.getCurrentTime()
-    let 滚动位置 = this.轨道容器.scrollLeft
-    // 计算当前播放位置相对于视口左侧的偏移量
-    let 相对偏移 = 当前时间 * 旧缩放 - 滚动位置
+    let 时长 = this.ws.getDuration()
+    if (时长 <= 0) return
+
+    // 如果没传锚点，默认用当前播放时间
+    let 实际锚点时间 = 锚点时间 ?? this.ws.getCurrentTime()
+    // 如果没传偏移，计算当前锚点时间在视口中的偏移
+    let 实际锚点偏移 = 锚点偏移 ?? 实际锚点时间 * 旧缩放 - this.轨道容器.scrollLeft
 
     this.当前缩放 = 值
     this.ws.zoom(值)
-
-    let 时长 = this.ws.getDuration()
-    if (时长 <= 0) return
 
     // 同步更新容器宽度
     let 总宽度 = 时长 * 值
@@ -364,7 +416,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
 
     // 缩放后，调整滚动位置，使当前播放位置保持在视口中的原相对位置
-    this.轨道容器.scrollLeft = 当前时间 * 值 - 相对偏移
+    this.轨道容器.scrollLeft = 实际锚点时间 * 值 - 实际锚点偏移
   }
 
   public async 设置资源(url: string, 文件名?: string, 真实路径?: string): Promise<void> {
@@ -434,6 +486,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   }
 
   public 同步进度(时间: number): void {
+    if (this.是否正在拖拽进度) return // 拖拽时忽略外部同步，避免卡顿
     if (this.ws !== null) {
       this.ws.setTime(时间)
     }
