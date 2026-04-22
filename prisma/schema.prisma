@@ -1,0 +1,53 @@
+datasource db {
+  // sqlite
+  provider = "sqlite"
+
+  // pg/mysql
+  // provider          = "postgresql"
+  // provider          = "mysql"
+  // shadowDatabaseUrl = env("SHADOW_DB_URL")
+}
+
+generator kysely {
+  provider = "prisma-kysely"
+  output   = "../src/types"
+  fileName = "db.ts"
+}
+
+// =================================================
+
+// 系统配置
+model system_config {
+  id         String   @id
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  is_initialized  Boolean @default(false) // 是否已初始化
+  enable_register Boolean // 启用注册
+  version         String // 软件版本
+}
+
+// 用户配置
+model user_config {
+  id         String   @id
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  user_id String @unique // 所属用户id(唯一)
+  user    user   @relation(fields: [user_id], references: [id], onUpdate: Restrict, onDelete: Restrict)
+
+  theme String // 主题颜色: 系统 | 亮色 | 暗色
+}
+
+// 用户
+model user {
+  id         String   @id
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  name     String  @unique // 用户名
+  pwd      String // 密码
+  is_admin Boolean // 是管理员
+
+  user_config user_config[]
+}

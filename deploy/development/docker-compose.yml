@@ -1,0 +1,13 @@
+services:
+  app:
+    image: lsby-playground-ts-service-dev
+    build:
+      context: ../../
+      dockerfile: ./deploy/development/dockerfile
+    ports:
+      - 3000:3000
+    env_file:
+      - ../../.env/.env.development
+    restart: always
+    volumes:
+      - ../../db:/opt/app/db

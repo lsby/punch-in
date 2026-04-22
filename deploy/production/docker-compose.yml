@@ -1,0 +1,13 @@
+services:
+  app:
+    image: lsby-playground-ts-service-prod
+    build:
+      context: ../../
+      dockerfile: ./deploy/production/dockerfile
+    ports:
+      - 80:80
+    env_file:
+      - ../../.env/.env.production
+    restart: always
+    volumes:
+      - ../../db:/opt/app/db

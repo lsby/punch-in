@@ -1,0 +1,10 @@
+/node_modules
+/dist
+/coverage
+/thunder-tests
+/db/*
+!**/.gitkeep
+/.parcel-cache
+/android
+/OCR-portable-python*
+/release

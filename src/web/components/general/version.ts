@@ -1,0 +1,17 @@
+import { version } from '../../../app/meta-info'
+import { 组件基类 } from '../../base/base'
+import { 创建元素 } from '../../global/tools/create-element'
+
+type 发出事件类型 = {}
+type 监听事件类型 = {}
+
+export class 软件版本组件 extends 组件基类<发出事件类型, 监听事件类型> {
+  static {
+    this.注册组件('lsby-app-version', this)
+  }
+
+  protected override async 当加载时(): Promise<void> {
+    let p = 创建元素('p', { innerText: `软件版本: ${version}` })
+    this.shadow.append(p)
+  }
+}

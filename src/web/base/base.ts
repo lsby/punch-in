@@ -1,0 +1,183 @@
+import { globalWebLog } from '../global/manager/log-manager'
+import { 获得滚动条样式 } from '../global/style/scrollbar'
+
+export abstract class 组件基类<
+  发出事件类型 extends Record<string, any>,
+  监听事件类型 extends Record<string, any>,
+> extends HTMLElement {
+  public static 注册组件(组件名称: string, 组件: CustomElementConstructor): void {
+    if (customElements.get(组件名称) === undefined) customElements.define(组件名称, 组件)
+    else console.warn(`组件名称 ${组件名称} 重复`)
+  }
+
+  protected log = globalWebLog.extend(this.constructor.name)
+  private 初始化完毕 = false
+  private 初始化完成事件: Promise<void> | null = null
+  private 初始化完成解析器: (() => void) | null = null
+  private 监听器列表: Array<{ type: string; handler: EventListener; options?: AddEventListenerOptions }> = []
+  private _shadow = this.attachShadow({ mode: 'open' })
+
+  public constructor() {
+    super()
+  }
+
+  protected get shadow(): ShadowRoot {
+    return this._shadow
+  }
+
+  public 获得宿主样式(): CSSStyleDeclaration {
+    let host = this._shadow.host
+    if (host instanceof HTMLElement) {
+      return host.style
+    }
+    throw new Error('Shadow host is not HTMLElement')
+  }
+
+  public 清空dom(): void {
+    while (this.firstChild !== null) {
+      this.removeChild(this.firstChild)
+    }
+  }
+  public 清空影子dom(): void {
+    while (this._shadow.firstChild !== null) {
+      this._shadow.removeChild(this._shadow.firstChild)
+    }
+  }
+
+  public async 刷新(): Promise<void> {
+    this.清理所有监听器()
+    this.清空影子dom()
+    await this.当加载时()
+  }
+
+  /**
+   * 注意, 只有在dom挂载后初始化才会完成.
+   */
+  public 等待初始化(): Promise<void> {
+    if (this.初始化完毕) return Promise.resolve()
+    if (this.初始化完成事件 === null) {
+      this.初始化完成事件 = new Promise<void>((res) => {
+        this.初始化完成解析器 = res
+      })
+    }
+    return this.初始化完成事件
+  }
+
+  public 派发事件<K extends keyof 发出事件类型>(
+    k: K,
+    v: 发出事件类型[K],
+    o?: Omit<CustomEventInit<发出事件类型[K]>, 'detail'>,
+  ): boolean {
+    void this.log.debug('派发事件: %o, 数据: %O', k, v)
+    return this.dispatchEvent(
+      new CustomEvent(k.toString(), {
+        detail: v, // 附加数据
+        bubbles: true, // 是否冒泡
+        cancelable: true, // 是否可取消
+        composed: true, // 是否可以穿越影子dom
+        ...o,
+      }),
+    )
+  }
+  /**
+   * 监听从其他地方冒泡上来的事件 (捕获从子组件或外部冒泡的事件)
+   */
+  public 监听冒泡事件<K extends keyof 监听事件类型>(
+    k: K,
+    f: (e: CustomEvent<监听事件类型[K]>) => Promise<void>,
+    o?: AddEventListenerOptions,
+  ): void {
+    let handler = (event: Event): void => {
+      // 有意让 Promise 浮动，因为事件监听器无法等待异步回调
+      void f(event as CustomEvent<监听事件类型[K]>)
+    }
+    let options = {
+      capture: false, // 是否在捕获阶段响应, true: 在捕获阶段响应, false: 在冒泡阶段响应
+      once: false, // 是否只触发一次
+      passive: false, // 是否阻止默认行为
+      // signal: _, // 触发控制器, 可以用 new AbortController 创建
+      ...o,
+    }
+    this.addEventListener(k.toString(), handler, options)
+    this.监听器列表.push({ type: k.toString(), handler, options })
+  }
+  /**
+   * 监听这个组件发出的事件 (外部监听组件派发的事件)
+   */
+  public 监听发出事件<K extends keyof 发出事件类型>(
+    k: K,
+    f: (e: CustomEvent<发出事件类型[K]>) => Promise<void>,
+    o?: AddEventListenerOptions,
+  ): void {
+    let handler = (event: Event): void => {
+      // 有意让 Promise 浮动，因为事件监听器无法等待异步回调
+      void f(event as CustomEvent<发出事件类型[K]>)
+    }
+    let options = {
+      capture: false,
+      once: false,
+      passive: false,
+      // signal: _, // 触发控制器, 可以用 new AbortController 创建
+      ...o,
+    }
+    this.addEventListener(k.toString(), handler, options)
+    this.监听器列表.push({ type: k.toString(), handler, options })
+  }
+
+  private 清理所有监听器(): void {
+    for (let listener of this.监听器列表) {
+      this.removeEventListener(listener.type, listener.handler, listener.options)
+    }
+    this.监听器列表 = []
+  }
+
+  protected abstract 当加载时(): Promise<void>
+  protected 当卸载时?(): Promise<void>
+  protected 当转移时?(): Promise<void>
+  private async connectedCallback(): Promise<void> {
+    void this.log.debug('connectedCallback, 对象: %O', this)
+
+    // 备份初始样式
+    let 宿主样式 = this.获得宿主样式()
+    let 宿主初始样式: { [key: string]: string } = {}
+    for (let i = 0; i < 宿主样式.length; i++) {
+      let 样式名 = 宿主样式[i]
+      if (样式名 === undefined) continue
+      宿主初始样式[样式名] = 宿主样式.getPropertyValue(样式名)
+    }
+
+    // 清空影子dom, 避免重复挂载, 因为connectedCallback可能会执行多次
+    this.清空影子dom()
+
+    // 应用默认样式
+    this._应用默认样式()
+
+    // 执行子类的过程
+    await this.当加载时()
+
+    // 标记初始化完成
+    this.初始化完毕 = true
+    this.初始化完成解析器?.()
+
+    // 还原初始样式
+    for (let 样式名 in 宿主初始样式) {
+      let 初始样式 = 宿主初始样式[样式名]
+      if (初始样式 === undefined || 宿主样式.getPropertyValue(样式名) === 初始样式) continue
+      宿主样式.setProperty(样式名, 初始样式)
+    }
+  }
+  private async disconnectedCallback(): Promise<void> {
+    if (this.当卸载时 !== undefined) void this.log.debug('disconnectedCallback, 对象: %O', this)
+    this.清理所有监听器()
+    await this.当卸载时?.()
+  }
+  private async adoptedCallback(): Promise<void> {
+    if (this.当转移时 !== undefined) void this.log.debug('adoptedCallback, 对象: %O', this)
+    await this.当转移时?.()
+  }
+  private _应用默认样式(): void {
+    let 样式 = document.createElement('style')
+    样式.textContent = 获得滚动条样式(':host') + 获得滚动条样式('*')
+    this._shadow.appendChild(样式)
+  }
+}
