@@ -82,6 +82,7 @@
     "node-schedule": "^2.1.1",
     "node-sqlite3-wasm": "^0.8.52",
     "prisma": "^7.2.0",
+    "wavesurfer.js": "^7.12.6",
     "zod": "3.24.2"
   },
   "devDependencies": {
