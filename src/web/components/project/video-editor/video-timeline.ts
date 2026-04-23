@@ -1,8 +1,8 @@
-import WaveSurfer from 'wavesurfer.js'
-import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js'
 import { 组件基类 } from '../../../base/base'
 import { API管理器 } from '../../../global/manager/api-manager'
-import { 创建元素 } from '../../../global/tools/create-element'
+import { 绘制刻度尺, 绘制波形 } from './video-timeline-canvas'
+import { 构建时间轴UI } from './video-timeline-ui'
+import { 格式化时间 } from './video-timeline-utils'
 
 type 发出事件类型 = { 进度跳转: number }
 type 监听事件类型 = {}
@@ -12,16 +12,22 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     this.注册组件('lsby-video-timeline', this)
   }
 
-  private 刻度尺容器: HTMLElement | null = null
   private 轨道容器: HTMLElement | null = null
-  private 片段容器: HTMLElement | null = null
-  private 波形容器: HTMLElement | null = null
-  private ws: WaveSurfer | null = null
+  private 内容层: HTMLElement | null = null
+  private 交互层: HTMLElement | null = null
+  private 画布容器: HTMLElement | null = null
+  private 刻度尺画布: HTMLCanvasElement | null = null
+  private 波形画布: HTMLCanvasElement | null = null
+  private 播放头元素: HTMLElement | null = null
+  private 波形加载遮罩: HTMLElement | null = null
+
   private 默认缩放: number = 10
   private 当前缩放: number = this.默认缩放
   private 是否正在拖拽进度: boolean = false
-  private 是否正在滚动: boolean = false
-  private 波形加载遮罩: HTMLElement | null = null
+  private 峰值数据: number[] | null = null
+  private 真实时长: number = 0
+  private 当前时间: number = 0
+  private 排除片段列表: { start: number; end: number }[] = []
 
   private 预览视频: HTMLVideoElement | null = null
   private 预览窗: HTMLElement | null = null
@@ -29,185 +35,26 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 预览时间标签: HTMLElement | null = null
   private 是否正在寻求预览: boolean = false
 
+  private 观察器: ResizeObserver | null = null
+  private 动画请求: number | null = null
+
   protected override async 当加载时(): Promise<void> {
     this.获得宿主样式().display = 'block'
     this.获得宿主样式().width = '100%'
 
-    let 容器 = 创建元素('div', {
-      style: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#16191d',
-        display: 'flex',
-        flexDirection: 'column',
-        border: '1px solid #333',
-        borderRadius: '12px',
-        fontFamily: "'Inter', sans-serif",
-        userSelect: 'none',
-        webkitUserSelect: 'none',
-        position: 'relative',
-      },
-    })
+    let UI = 构建时间轴UI(this.shadow)
+    this.轨道容器 = UI.轨道容器
+    this.内容层 = UI.内容层
+    this.交互层 = UI.交互层
+    this.画布容器 = UI.画布容器
+    this.刻度尺画布 = UI.刻度尺画布
+    this.波形画布 = UI.波形画布
+    this.播放头元素 = UI.播放头元素
+    this.波形加载遮罩 = UI.波形加载遮罩
+    this.预览窗 = UI.预览窗
+    this.预览画布 = UI.预览画布
+    this.预览时间标签 = UI.预览时间标签
 
-    // 1. 刻度尺
-    this.刻度尺容器 = 创建元素('div', {
-      style: { width: '100%', height: '32px', backgroundColor: '#1a1e23', borderBottom: '1px solid #333' },
-    })
-
-    // 2. 轨道区域 (包含背景线和片段)
-    this.轨道容器 = 创建元素('div', {
-      style: {
-        flex: '1',
-        width: '100%',
-        position: 'relative',
-        overflowX: 'auto',
-        overflowY: 'hidden',
-        backgroundColor: '#0f1115',
-        backgroundImage: 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px)',
-        backgroundSize: '100% 40px',
-      },
-    })
-
-    // 3. 片段 (Clip Block)
-    this.片段容器 = 创建元素('div', {
-      style: {
-        position: 'absolute',
-        top: '32px',
-        left: '0',
-        height: 'calc(100% - 32px)',
-        minWidth: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      },
-    })
-
-    this.波形容器 = 创建元素('div', {
-      style: {
-        flex: '1',
-        width: '100%',
-        backgroundColor: 'rgba(79, 70, 229, 0.02)',
-        flexShrink: '0',
-        position: 'relative',
-      },
-    })
-
-    this.波形加载遮罩 = 创建元素('div', {
-      style: {
-        position: 'absolute',
-        top: '0',
-        left: '0',
-        right: '0',
-        bottom: '0',
-        backgroundColor: 'rgba(15, 17, 21, 0.9)',
-        display: 'none',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: '1000',
-        backdropFilter: 'blur(8px)',
-        color: '#818cf8',
-        gap: '12px',
-        fontSize: '14px',
-        fontWeight: '500',
-        borderRadius: '12px',
-      },
-    })
-
-    let 加载动画 = 创建元素('div', {
-      style: {
-        width: '24px',
-        height: '24px',
-        border: '2px solid rgba(129, 140, 248, 0.1)',
-        borderTopColor: '#818cf8',
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
-      },
-    })
-
-    let 加载文字 = 创建元素('span', { textContent: '正在解析音频波形...' })
-    this.波形加载遮罩.append(加载动画, 加载文字)
-
-    let 动画样式 = 创建元素('style', {
-      textContent: `
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `,
-    })
-
-    this.shadow.append(动画样式)
-
-    // 预览窗
-    this.预览窗 = 创建元素('div', {
-      style: {
-        position: 'absolute',
-        bottom: 'calc(100% + 12px)',
-        left: '0',
-        display: 'none',
-        flexDirection: 'column',
-        alignItems: 'center',
-        pointerEvents: 'none',
-        zIndex: '1000',
-        transform: 'translateX(-50%)',
-      },
-    })
-
-    let 预览框 = 创建元素('div', {
-      style: {
-        border: '2px solid #fff',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-        backgroundColor: '#000',
-        position: 'relative',
-        width: '160px',
-        height: '90px',
-      },
-    })
-
-    this.预览画布 = 创建元素('canvas', {
-      width: 160,
-      height: 90,
-      style: { width: '100%', height: '100%', display: 'block' },
-    })
-
-    this.预览时间标签 = 创建元素('div', {
-      style: {
-        position: 'absolute',
-        bottom: '4px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        color: '#fff',
-        padding: '2px 8px',
-        borderRadius: '4px',
-        fontSize: '11px',
-        fontWeight: 'bold',
-      },
-    })
-
-    let 预览箭头 = 创建元素('div', {
-      style: {
-        width: '0',
-        height: '0',
-        borderLeft: '6px solid transparent',
-        borderRight: '6px solid transparent',
-        borderTop: '6px solid #fff',
-      },
-    })
-
-    预览框.append(this.预览画布, this.预览时间标签)
-    this.预览窗.append(预览框, 预览箭头)
-
-    this.片段容器.append(this.波形容器)
-    this.轨道容器.append(this.刻度尺容器, this.片段容器)
-    容器.append(this.轨道容器, this.波形加载遮罩, this.预览窗)
-    this.shadow.append(容器)
-
-    // 鼠标交互逻辑
     this.轨道容器.onmouseenter = (): void => {
       if (this.预览视频 !== null && this.预览窗 !== null) this.预览窗.style.display = 'flex'
     }
@@ -216,31 +63,31 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       if (this.预览窗 !== null) this.预览窗.style.display = 'none'
     }
 
-    this.轨道容器.onmousemove = (e: MouseEvent): void => {
+    let 获取当前时间 = (e: MouseEvent): number => {
+      if (this.轨道容器 === null) return 0
+      let 容器矩形 = this.轨道容器.getBoundingClientRect()
+      let 相对X = e.clientX - 容器矩形.left + this.轨道容器.scrollLeft
+      let 时间 = 相对X / this.当前缩放
+      return Math.max(0, Math.min(this.真实时长, 时间))
+    }
+
+    let 容器移动逻辑 = (e: MouseEvent): void => {
       if (
         this.预览窗 === null ||
         this.轨道容器 === null ||
-        this.ws === null ||
         this.预览视频 === null ||
         this.是否正在拖拽进度 ||
-        this.是否正在滚动
+        this.真实时长 <= 0
       )
         return
       this.预览窗.style.display = 'flex'
 
       let 容器矩形 = this.轨道容器.getBoundingClientRect()
-      let 相对X = e.clientX - 容器矩形.left + this.轨道容器.scrollLeft
-      let 时长 = this.ws.getDuration()
-      let 时间 = (相对X / (时长 * this.当前缩放)) * 时长
+      let 时间 = 获取当前时间(e)
 
-      if (时间 < 0) 时间 = 0
-      if (时间 > 时长) 时间 = 时长
-
-      // 更新预览窗位置
       this.预览窗.style.left = `${e.clientX - 容器矩形.left}px`
 
-      // 更新预览内容
-      if (this.预览时间标签 !== null) this.预览时间标签.textContent = this.格式化时间(时间)
+      if (this.预览时间标签 !== null) this.预览时间标签.textContent = 格式化时间(时间)
 
       if (!this.是否正在寻求预览) {
         this.是否正在寻求预览 = true
@@ -248,46 +95,28 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
     }
 
-    // 鼠标交互逻辑 (点击/拖动控制进度, 右键滚动)
-    this.轨道容器.onmousedown = (e: MouseEvent): void => {
-      if (this.ws === null || this.轨道容器 === null) return
-      let 容器矩形 = this.轨道容器.getBoundingClientRect()
-      let 时长 = this.ws.getDuration()
-      if (时长 <= 0) return
+    this.内容层.onmousemove = 容器移动逻辑
+    this.轨道容器.onmousemove = 容器移动逻辑
 
-      let 获取当前时间 = (e: MouseEvent): number => {
-        if (this.轨道容器 === null) throw new Error('轨道容器不存在')
-        let 相对X = e.clientX - 容器矩形.left + this.轨道容器.scrollLeft
-        let 时间 = (相对X / (时长 * this.当前缩放)) * 时长
-        return Math.max(0, Math.min(时长, 时间))
-      }
-
+    this.交互层.onmousedown = (e: MouseEvent): void => {
+      if (this.轨道容器 === null || this.真实时长 <= 0) return
       if (e.button === 0) {
-        // 左键: 进度拖拽
         this.是否正在拖拽进度 = true
         if (this.预览窗 !== null) this.预览窗.style.display = 'none'
 
         let 执行更新 = (event: MouseEvent): void => {
           let 时间 = 获取当前时间(event)
           this.派发事件('进度跳转', 时间)
-          if (this.ws !== null) this.ws.setTime(时间)
+          this.当前时间 = 时间
+          this.更新播放头()
         }
 
         执行更新(e)
 
-        let 拖拽请求ID: number | null = null
         let 处理移动 = (moveEvent: MouseEvent): void => {
-          if (拖拽请求ID !== null) return
-          拖拽请求ID = requestAnimationFrame(() => {
-            拖拽请求ID = null
-            if (this.是否正在拖拽进度) 执行更新(moveEvent)
-          })
+          if (this.是否正在拖拽进度) 执行更新(moveEvent)
         }
         let 处理抬起 = (): void => {
-          if (拖拽请求ID !== null) {
-            cancelAnimationFrame(拖拽请求ID)
-            拖拽请求ID = null
-          }
           this.是否正在拖拽进度 = false
           window.removeEventListener('mousemove', 处理移动)
           window.removeEventListener('mouseup', 处理抬起)
@@ -295,21 +124,20 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
         window.addEventListener('mousemove', 处理移动)
         window.addEventListener('mouseup', 处理抬起)
       } else if (e.button === 2) {
-        // 右键: 滚动
-        this.是否正在滚动 = true
-        if (this.预览窗 !== null) this.预览窗.style.display = 'none'
         let 起始X = e.clientX
-        let 起始滚动 = this.轨道容器.scrollLeft
+        let 起始Scroll = this.轨道容器.scrollLeft
+        this.轨道容器.style.cursor = 'grabbing'
 
-        let 处理移动 = (e: MouseEvent): void => {
-          if (this.轨道容器 === null) return
-          if (this.是否正在滚动) {
-            let 偏移 = e.clientX - 起始X
-            this.轨道容器.scrollLeft = 起始滚动 - 偏移
+        if (this.预览窗 !== null) this.预览窗.style.display = 'none'
+
+        let 处理移动 = (moveEvent: MouseEvent): void => {
+          let 差值 = moveEvent.clientX - 起始X
+          if (this.轨道容器 !== null) {
+            this.轨道容器.scrollLeft = 起始Scroll - 差值
           }
         }
         let 处理抬起 = (): void => {
-          this.是否正在滚动 = false
+          if (this.轨道容器 !== null) this.轨道容器.style.cursor = 'default'
           window.removeEventListener('mousemove', 处理移动)
           window.removeEventListener('mouseup', 处理抬起)
         }
@@ -318,43 +146,50 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
     }
 
-    // 滚轮交互 (竖向缩放, 横向移动)
-    this.轨道容器.onwheel = (e: WheelEvent): void => {
-      if (this.ws === null || this.轨道容器 === null) return
-      e.preventDefault()
-
-      // 如果横向滚动分量较大，执行移动
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        this.轨道容器.scrollLeft += e.deltaX
-      } else if (Math.abs(e.deltaY) > 0) {
-        // 否则执行缩放
-        let 容器矩形 = this.轨道容器.getBoundingClientRect()
-        let 相对X = e.clientX - 容器矩形.left
-        let 时长 = this.ws.getDuration()
-        if (时长 <= 0) return
-        let 锚点时间 = ((相对X + this.轨道容器.scrollLeft) / (时长 * this.当前缩放)) * 时长
-
-        let 增量 = e.deltaY > 0 ? 0.9 : 1.1
-        let 新缩放 = Math.min(1000, Math.max(10, this.当前缩放 * 增量))
-        this.执行缩放(新缩放, 锚点时间, 相对X)
+    this.轨道容器.onmousedown = (e: MouseEvent): void => {
+      if (e.target === this.轨道容器 || e.target === this.内容层) {
+        this.交互层?.dispatchEvent(new MouseEvent('mousedown', e))
       }
     }
 
-    this.轨道容器.oncontextmenu = (e: MouseEvent): void => {
+    this.轨道容器.onwheel = (e: WheelEvent): void => {
       e.preventDefault()
+      if (this.真实时长 <= 0) return
+
+      if (e.ctrlKey || e.metaKey || e.deltaY !== 0) {
+        let 缩放因子 = e.deltaY > 0 ? 0.9 : 1.1
+        let 新缩放 = this.当前缩放 * 缩放因子
+
+        let 锚点时间 = 获取当前时间(e as unknown as MouseEvent)
+        if (this.轨道容器 === null) throw new Error('意外的空值')
+        let 容器矩形 = this.轨道容器.getBoundingClientRect()
+        let 锚点相对视口X = e.clientX - 容器矩形.left
+
+        this.执行缩放(新缩放, 锚点时间, 锚点相对视口X)
+      } else if (e.deltaX !== 0) {
+        if (this.轨道容器 === null) throw new Error('意外的空值')
+        this.轨道容器.scrollLeft += e.deltaX
+      }
     }
 
-    // 初始化 WaveSurfer
-    setTimeout(() => {
-      this.初始化波形()
-    }, 0)
+    this.轨道容器.onscroll = (): void => {
+      this.触发重绘()
+    }
+
+    this.观察器 = new ResizeObserver((): void => {
+      this.调整画布尺寸()
+    })
+    this.观察器.observe(this.轨道容器)
+
+    window.addEventListener('resize', this.调整画布尺寸.bind(this))
   }
 
   protected override async 当卸载时(): Promise<void> {
-    if (this.ws !== null) {
-      this.ws.destroy()
-      this.ws = null
+    if (this.观察器 !== null && this.轨道容器 !== null) {
+      this.观察器.unobserve(this.轨道容器)
+      this.观察器.disconnect()
     }
+    window.removeEventListener('resize', this.调整画布尺寸.bind(this))
     if (this.预览视频 !== null) {
       this.预览视频.src = ''
       this.预览视频.load()
@@ -362,68 +197,93 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
   }
 
-  private 格式化时间(秒: number): string {
-    let 分 = Math.floor(秒 / 60)
-    let 剩余秒 = Math.floor(秒 % 60)
-    return `${分.toString().padStart(2, '0')}:${剩余秒.toString().padStart(2, '0')}`
+  private 调整画布尺寸(): void {
+    if (this.画布容器 === null || this.刻度尺画布 === null || this.波形画布 === null) return
+    let rect = this.画布容器.getBoundingClientRect()
+    let dpr = (window.devicePixelRatio as number | undefined) ?? 1
+
+    let newWidth = rect.width * dpr
+    let newHeight = (rect.height - 32) * dpr
+    if (this.波形画布.width !== newWidth || this.波形画布.height !== newHeight) {
+      this.刻度尺画布.width = newWidth
+      this.刻度尺画布.height = 32 * dpr
+      this.波形画布.width = newWidth
+      this.波形画布.height = newHeight
+      this.触发重绘()
+    }
   }
 
-  private 初始化波形(): void {
-    if (this.波形容器 === null || this.刻度尺容器 === null) return
-
-    if (this.ws !== null) {
-      this.ws.destroy()
+  private 触发重绘(): void {
+    if (this.动画请求 !== null) {
+      cancelAnimationFrame(this.动画请求)
     }
-
-    this.ws = WaveSurfer.create({
-      container: this.波形容器,
-      waveColor: '#4f46e5',
-      progressColor: '#818cf8',
-      cursorColor: '#ffffff',
-      cursorWidth: 2,
-      height: this.波形容器.offsetHeight,
-      minPxPerSec: 20,
-      fillParent: false,
-      interact: false,
-      autoScroll: true,
-      plugins: [
-        TimelinePlugin.create({
-          container: this.刻度尺容器,
-          height: 32,
-          style: { color: '#aaa', fontSize: '10px' },
-          secondaryLabelOpacity: 0.6,
-        }),
-      ],
+    this.动画请求 = requestAnimationFrame((): void => {
+      this.动画请求 = null
+      let 参数 = {
+        当前缩放: this.当前缩放,
+        真实时长: this.真实时长,
+        峰值数据: this.峰值数据,
+        滚动距离: this.轨道容器?.scrollLeft ?? 0,
+        视口宽度: this.轨道容器?.clientWidth ?? 0,
+        像素比: (window.devicePixelRatio as number | undefined) ?? 1,
+      }
+      if (this.刻度尺画布 !== null) 绘制刻度尺(this.刻度尺画布, 参数)
+      if (this.波形画布 !== null) 绘制波形(this.波形画布, 参数)
+      this.更新播放头()
     })
   }
 
+  public 设置排除片段(片段: { start: number; end: number }[]): void {
+    this.排除片段列表 = 片段
+    this.渲染排除片段()
+  }
+
+  private 渲染排除片段(): void {
+    if (this.交互层 === null) return
+    this.交互层.innerHTML = ''
+    for (let p of this.排除片段列表) {
+      let startX = p.start * this.当前缩放
+      let w = (p.end - p.start) * this.当前缩放
+      let div = document.createElement('div')
+      div.style.position = 'absolute'
+      div.style.left = `${startX}px`
+      div.style.width = `${w}px`
+      div.style.top = '0'
+      div.style.height = '100%'
+      div.style.background = `repeating-linear-gradient(
+        45deg,
+        rgba(239, 68, 68, 0.05),
+        rgba(239, 68, 68, 0.05) 10px,
+        rgba(239, 68, 68, 0.15) 10px,
+        rgba(239, 68, 68, 0.15) 20px
+      )`
+      div.style.borderLeft = '1px solid rgba(239, 68, 68, 0.4)'
+      div.style.borderRight = '1px solid rgba(239, 68, 68, 0.4)'
+      div.style.pointerEvents = 'none'
+      this.交互层.append(div)
+    }
+  }
+
   private 执行缩放(值: number, 锚点时间?: number, 锚点偏移?: number): void {
-    if (this.ws === null || this.轨道容器 === null) return
+    if (this.轨道容器 === null || this.内容层 === null || this.真实时长 <= 0) return
 
     let 旧缩放 = this.当前缩放
-    let 时长 = this.ws.getDuration()
-    if (时长 <= 0) return
+    let 最大缩放 = 1000
+    let 实际缩放 = Math.max(0.1, Math.min(值, 最大缩放))
 
-    // 如果没传锚点，默认用当前播放时间
-    let 实际锚点时间 = 锚点时间 ?? this.ws.getCurrentTime()
-    // 如果没传偏移，计算当前锚点时间在视口中的偏移
+    let 实际锚点时间 = 锚点时间 ?? this.当前时间
     let 实际锚点偏移 = 锚点偏移 ?? 实际锚点时间 * 旧缩放 - this.轨道容器.scrollLeft
 
-    this.当前缩放 = 值
-    this.ws.zoom(值)
+    this.当前缩放 = 实际缩放
 
-    // 同步更新容器宽度
-    let 总宽度 = 时长 * 值
-    if (this.片段容器 !== null) {
-      this.片段容器.style.width = `${总宽度}px`
-    }
-    if (this.刻度尺容器 !== null) {
-      this.刻度尺容器.style.width = `${总宽度}px`
-      this.刻度尺容器.style.minWidth = '100%'
-    }
+    let 总宽度 = this.真实时长 * 实际缩放
+    this.内容层.style.width = `${总宽度}px`
+    if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
 
-    // 缩放后，调整滚动位置，使当前播放位置保持在视口中的原相对位置
-    this.轨道容器.scrollLeft = 实际锚点时间 * 值 - 实际锚点偏移
+    this.轨道容器.scrollLeft = 实际锚点时间 * 实际缩放 - 实际锚点偏移
+
+    this.渲染排除片段()
+    this.触发重绘()
   }
 
   public async 设置资源(url: string, 文件名?: string, 真实路径?: string): Promise<void> {
@@ -435,27 +295,30 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
 
     try {
-      if (this.ws !== null) {
-        this.ws.empty() // 立即清空旧波形
-      }
+      this.峰值数据 = []
+      this.真实时长 = 0
+      this.当前时间 = 0
+      this.排除片段列表 = []
+      this.渲染排除片段()
+      this.触发重绘()
 
-      let 峰值: number[] | undefined = undefined
       if (真实路径 !== undefined) {
         try {
           let 结果 = await API管理器.请求postJson并处理错误('/api/project/get-video-peaks', {
             videoPath: 真实路径,
             samplesPerSecond: 100,
           })
-          峰值 = 结果.peaks
+          this.峰值数据 = 结果.peaks
+          this.真实时长 = this.峰值数据.length / 100
         } catch (e) {
-          console.error('获取峰值数据失败，将回退到默认加载方式:', e)
+          console.error('获取峰值数据失败:', e)
         }
       }
 
-      if (this.ws !== null) {
-        this.当前缩放 = this.默认缩放
-        await this.ws.load(url, 峰值 !== undefined ? [峰值] : undefined)
-        this.ws.setTime(0)
+      if (this.真实时长 > 0) {
+        let 视口宽度 = this.轨道容器?.clientWidth ?? 1000
+        this.当前缩放 = Math.min(this.默认缩放, 视口宽度 / this.真实时长)
+        this.当前缩放 = Math.max(0.1, this.当前缩放)
         this.执行缩放(this.当前缩放)
       }
     } finally {
@@ -464,7 +327,6 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
     }
 
-    // 初始化预览视频
     if (this.预览视频 === null) {
       this.预览视频 = document.createElement('video')
       this.预览视频.muted = true
@@ -480,7 +342,6 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
     this.预览视频.src = url
 
-    // 清除预览画布并隐藏预览窗
     if (this.预览窗 !== null) {
       this.预览窗.style.display = 'none'
     }
@@ -493,9 +354,35 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   }
 
   public 同步进度(时间: number): void {
-    if (this.是否正在拖拽进度) return // 拖拽时忽略外部同步，避免卡顿
-    if (this.ws !== null) {
-      this.ws.setTime(时间)
+    if (this.是否正在拖拽进度) return
+    this.当前时间 = 时间
+    this.更新播放头()
+
+    if (this.轨道容器 !== null) {
+      let x = 时间 * this.当前缩放
+      let viewWidth = this.轨道容器.clientWidth
+      let sl = this.轨道容器.scrollLeft
+      if (x > sl + viewWidth * 0.8) {
+        this.轨道容器.scrollLeft = x - viewWidth * 0.8
+      } else if (x < sl) {
+        this.轨道容器.scrollLeft = x
+      }
+    }
+  }
+
+  public 获取峰值数据(): number[] | null {
+    return this.峰值数据
+  }
+
+  private 更新播放头(): void {
+    if (this.播放头元素 === null) return
+    let scrollLeft = this.轨道容器?.scrollLeft ?? 0
+    let logicX = this.当前时间 * this.当前缩放 - scrollLeft
+    if (logicX < -10 || logicX > (this.轨道容器?.clientWidth ?? 0) + 10) {
+      this.播放头元素.style.display = 'none'
+    } else {
+      this.播放头元素.style.display = 'block'
+      this.播放头元素.style.transform = `translateX(${logicX}px)`
     }
   }
 }

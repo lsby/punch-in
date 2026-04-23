@@ -9,11 +9,14 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     this.注册组件('lsby-video-preview', this)
   }
 
-  private 视频元素: HTMLVideoElement | null = null
+  private 播放器: HTMLVideoElement | null = null
   private 进度循环ID: number | null = null
   private 状态标签: HTMLDivElement | null = null
   private 中心图标容器: HTMLDivElement | null = null
   private 反馈动画定时器ID: any = null
+  private 排除片段: { start: number; end: number }[] = []
+  private 上一个跳越的片段: { start: number; end: number } | null = null
+
   private 键盘监听器: (e: KeyboardEvent) => void = (e) => {
     if (e.code === 'Space') {
       e.preventDefault()
@@ -44,14 +47,57 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
       },
     })
 
-    this.视频元素 = 创建元素('video', {
-      style: { width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000', cursor: 'pointer' },
+    // 创建播放器
+    let video = 创建元素('video', {
+      style: {
+        position: 'absolute',
+        top: '0',
+        left: '0',
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        backgroundColor: '#000',
+        cursor: 'pointer',
+        opacity: '1',
+        zIndex: '1',
+        pointerEvents: 'auto',
+      },
     })
-    this.视频元素.onclick = (): void => {
+
+    video.onclick = (): void => {
       this.切换播放状态()
     }
 
-    容器.append(this.视频元素)
+    video.onplay = (): void => {
+      this.开始进度循环()
+    }
+
+    video.onpause = (): void => {
+      this.停止进度循环()
+      this.更新状态标签(false)
+    }
+
+    video.onplaying = (): void => {
+      this.更新状态标签(true)
+    }
+
+    video.onwaiting = (): void => {
+      this.更新状态标签(true, '正在缓冲...')
+    }
+
+    video.onended = (): void => {
+      this.停止进度循环()
+      this.更新状态标签(false)
+    }
+
+    video.ontimeupdate = (): void => {
+      if (video.paused) {
+        this.派发事件('进度变化', video.currentTime)
+      }
+    }
+
+    this.播放器 = video
+    容器.append(video)
 
     // 状态标签 (右上角)
     this.状态标签 = 创建元素('div', {
@@ -107,63 +153,38 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
 
     // 键盘监听
     window.addEventListener('keydown', this.键盘监听器)
-
-    this.视频元素.ontimeupdate = (): void => {
-      this.更新时间显示()
-      // 保留原本的事件发射作为兜底，但主要平滑更新将由 requestAnimationFrame 处理
-      if (this.视频元素 !== null && this.视频元素.paused) {
-        this.派发事件('进度变化', this.视频元素.currentTime)
-      }
-    }
-
-    this.视频元素.onplay = (): void => {
-      this.开始进度循环()
-    }
-
-    this.视频元素.onplaying = (): void => {
-      this.更新状态标签(true)
-    }
-
-    this.视频元素.onwaiting = (): void => {
-      this.更新状态标签(true, '正在缓冲...')
-    }
-
-    this.视频元素.onseeking = (): void => {
-      this.更新状态标签(this.视频元素 !== null && !this.视频元素.paused, '寻道中...')
-    }
-
-    this.视频元素.onseeked = (): void => {
-      if (this.视频元素 !== null) {
-        this.更新状态标签(!this.视频元素.paused)
-      }
-    }
-
-    this.视频元素.onpause = (): void => {
-      this.停止进度循环()
-      this.更新状态标签(false)
-    }
-
-    this.视频元素.onended = (): void => {
-      this.停止进度循环()
-      this.更新状态标签(false)
-    }
   }
 
   protected override async 当卸载时(): Promise<void> {
     this.停止进度循环()
     window.removeEventListener('keydown', this.键盘监听器)
-    if (this.视频元素 !== null) {
-      this.视频元素.pause()
-      this.视频元素.src = ''
-      this.视频元素.load()
+    if (this.播放器 !== null) {
+      this.播放器.pause()
+      this.播放器.src = ''
+      this.播放器.load()
     }
   }
 
   private 开始进度循环(): void {
     if (this.进度循环ID !== null) return
     let 循环 = (): void => {
-      if (this.视频元素 !== null && !this.视频元素.paused) {
-        this.派发事件('进度变化', this.视频元素.currentTime)
+      let video = this.播放器
+      if (video !== null && !video.paused) {
+        let 当前时间 = video.currentTime
+        let 命中的片段 = this.排除片段.find((s) => 当前时间 >= s.start && 当前时间 < s.end)
+
+        if (命中的片段 !== undefined) {
+          // 如果刚刚已经对这个片段发出过跳越指令，由于视频关键帧或浮点数问题可能还没完全爬出这个区间
+          // 我们就不再重复发跳越指令，让播放器自然播放完这最后一点点误差时间
+          if (this.上一个跳越的片段 !== 命中的片段 && !video.seeking) {
+            this.上一个跳越的片段 = 命中的片段
+            video.currentTime = 命中的片段.end
+            this.派发事件('进度变化', video.currentTime)
+          }
+        } else {
+          this.上一个跳越的片段 = null
+          this.派发事件('进度变化', 当前时间)
+        }
         this.进度循环ID = requestAnimationFrame(循环)
       } else {
         this.进度循环ID = null
@@ -179,27 +200,35 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
   }
 
+  public 设置排除片段(片段: { start: number; end: number }[]): void {
+    this.排除片段 = 片段
+  }
+
+  public 获取视频时长(): number {
+    return this.播放器 !== null && !isNaN(this.播放器.duration) ? this.播放器.duration : 0
+  }
+
   public 设置视频源(url: string): void {
     void this.log.info('设置视频源:', url)
-    if (this.视频元素 !== null) {
-      this.视频元素.pause()
-      this.视频元素.currentTime = 0
-      this.视频元素.src = url
-      this.视频元素.load()
-      this.更新状态标签(false)
-      this.派发事件('播放状态变化', false)
-      this.派发事件('进度变化', 0)
-    }
+    if (this.播放器 === null) return
+    this.播放器.pause()
+    this.播放器.currentTime = 0
+    this.播放器.src = url
+    this.播放器.load()
+    this.播放器.muted = false
+    this.更新状态标签(false)
+    this.派发事件('播放状态变化', false)
+    this.派发事件('进度变化', 0)
   }
 
   public 切换播放状态(): void {
-    if (this.视频元素 === null) return
-    if (this.视频元素.paused) {
-      void this.视频元素.play()
+    if (this.播放器 === null) return
+    if (this.播放器.paused) {
+      void this.播放器.play()
       this.派发事件('播放状态变化', true)
       this.执行状态反馈(true)
     } else {
-      this.视频元素.pause()
+      this.播放器.pause()
       this.派发事件('播放状态变化', false)
       this.执行状态反馈(false)
     }
@@ -210,7 +239,6 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     let 文本 = 额外文本 ?? (正在播放 ? '正在播放' : '已暂停')
     let 颜色 = 正在播放 ? '#4caf50' : '#ff9800'
 
-    // 如果是中间状态，使用蓝色
     if (额外文本 !== undefined) 颜色 = '#2196f3'
 
     this.状态标签.innerHTML = `
@@ -228,29 +256,24 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   private 执行状态反馈(正在播放: boolean): void {
     if (this.中心图标容器 === null) return
 
-    // 清理之前的定时器
     if (this.反馈动画定时器ID !== null) {
       clearTimeout(this.反馈动画定时器ID)
       this.反馈动画定时器ID = null
     }
 
-    // 设置图标
     let 图标 = 正在播放
       ? '<svg viewBox="0 0 24 24" width="40" height="40" fill="white"><path d="M8 5v14l11-7z"/></svg>'
       : '<svg viewBox="0 0 24 24" width="40" height="40" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>'
 
     this.中心图标容器.innerHTML = 图标
 
-    // 动画效果
     this.中心图标容器.style.opacity = '1'
     this.中心图标容器.style.transform = 'translate(-50%, -50%) scale(1)'
 
-    // 1秒后消失
     this.反馈动画定时器ID = setTimeout(() => {
       if (this.中心图标容器 !== null) {
         this.中心图标容器.style.opacity = '0'
         this.中心图标容器.style.transform = 'translate(-50%, -50%) scale(1.5)'
-        // 动画结束后重置 scale，但不影响透明度渐变
         this.反馈动画定时器ID = setTimeout(() => {
           if (this.中心图标容器 !== null && this.中心图标容器.style.opacity === '0') {
             this.中心图标容器.style.transform = 'translate(-50%, -50%) scale(0.8)'
@@ -262,23 +285,12 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   }
 
   public 跳转(时间: number): void {
-    if (this.视频元素 !== null) {
-      let 原本在播放 = !this.视频元素.paused
-      this.视频元素.currentTime = 时间
-      // 如果原本在播放，尝试维持播放状态，防止部分浏览器在 seek 后停住
+    if (this.播放器 !== null) {
+      let 原本在播放 = !this.播放器.paused
+      this.播放器.currentTime = 时间
       if (原本在播放) {
-        void this.视频元素.play().catch(() => {})
+        void this.播放器.play().catch(() => {})
       }
     }
-  }
-
-  private 更新时间显示(): void {
-    // 播放窗已移除, 暂时不需要更新时间显示
-  }
-
-  private 格式化时间(秒数: number): string {
-    let 分 = Math.floor(秒数 / 60)
-    let 秒 = Math.floor(秒数 % 60)
-    return `${分.toString().padStart(2, '0')}:${秒.toString().padStart(2, '0')}`
   }
 }
