@@ -21,7 +21,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 播放头元素: HTMLElement | null = null
   private 波形加载遮罩: HTMLElement | null = null
 
-  private 默认缩放: number = 10
+  private 默认缩放: number = 100
   private 当前缩放: number = this.默认缩放
   private 是否正在拖拽进度: boolean = false
   private 峰值数据: number[] | null = null
@@ -317,8 +317,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
       if (this.真实时长 > 0) {
         let 视口宽度 = this.轨道容器?.clientWidth ?? 1000
-        this.当前缩放 = Math.min(this.默认缩放, 视口宽度 / this.真实时长)
-        this.当前缩放 = Math.max(0.1, this.当前缩放)
+        this.当前缩放 = Math.max(this.默认缩放, 视口宽度 / this.真实时长)
         this.执行缩放(this.当前缩放)
       }
     } finally {
