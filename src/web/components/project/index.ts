@@ -12,15 +12,15 @@ import { 设置主题组件 } from '../process/set-theme'
 import { 演示跳转组件 } from '../demo/to-demo'
 import { 软件版本组件 } from '../general/version'
 import { 视频剪辑页面组件 } from './page-video-editor'
-import { 用户设置组件 } from './settings'
-import { 用户信息组件 } from './user-profile'
+import { 用户设置组件 } from './user/settings'
+import { 用户信息组件 } from './user/user-profile'
 
 type 发出事件类型 = {}
 type 监听事件类型 = {}
 
 export class 首页组件 extends 组件基类<发出事件类型, 监听事件类型> {
   static {
-    this.注册组件('lsby-page-index', this)
+    this.注册组件('lsby-index', this)
   }
 
   protected override async 当加载时(): Promise<void> {

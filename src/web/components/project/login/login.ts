@@ -1,9 +1,12 @@
-import { 组件基类 } from '../../base/base'
-import { API管理器 } from '../../global/manager/api-manager'
-import { 创建元素 } from '../../global/tools/create-element'
-import { 主要按钮, 链接按钮 } from '../general/base/base-button'
-import { 表单 } from '../general/form/form'
-import { 密码输入框, 普通输入框 } from '../general/form/form-input'
+import { 组件基类 } from '../../../base/base'
+import { API管理器 } from '../../../global/manager/api-manager'
+import { 创建元素 } from '../../../global/tools/create-element'
+import { 主要按钮, 链接按钮 } from '../../general/base/base-button'
+import { 表单 } from '../../general/form/form'
+import { 密码输入框, 普通输入框 } from '../../general/form/form-input'
+import { 设置调试组件 } from '../../process/set-debug'
+import { 设置网页全屏组件 } from '../../process/set-html-full'
+import { 设置主题组件 } from '../../process/set-theme'
 
 type 发出事件类型 = {}
 type 监听事件类型 = {}
@@ -29,6 +32,9 @@ export class 登录组件 extends 组件基类<发出事件类型, 监听事件�
   private 当前模式: 'login' | 'register' = 'login'
 
   protected override async 当加载时(): Promise<void> {
+    this.shadow.append(new 设置主题组件({ 从数据库加载: false }))
+    this.shadow.append(new 设置调试组件({ 排除事件: 'mousemove,mouseenter,mouseleave,scroll' }))
+    this.shadow.append(new 设置网页全屏组件())
     // 获取注册启用状态
     try {
       let 响应 = await API管理器.请求postJson并处理错误('/api/project/get-enable-registration', {})
