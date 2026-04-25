@@ -5,6 +5,7 @@ type 模态框选项 = {
   关闭回调?: () => void | Promise<void>
   宽度?: string
   高度?: string
+  最大高度?: string
 }
 
 type 模态框栈项 = {
@@ -17,6 +18,7 @@ type 模态框栈项 = {
   当前宽度: string
   当前高度: string
   最大化按钮: 文本按钮
+  初始位置?: { x: number; y: number }
 }
 
 import { 文本按钮 } from '../../components/general/base/base-button'
@@ -44,7 +46,8 @@ class 模态框管理器 {
         top: '0',
         width: '100vw',
         height: '100vh',
-        background: 'var(--遮罩颜色)',
+        background: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(4px)',
         display: 'none',
         justifyContent: 'center',
         alignItems: 'center',
@@ -55,15 +58,14 @@ class 模态框管理器 {
     // 框
     let 框 = 创建元素('div', {
       style: {
-        position: 'absolute',
-        background: 'var(--卡片背景颜色)',
-        border: '1px solid var(--边框颜色)',
-        borderRadius: '4px',
-        boxShadow: '0 4px 12px var(--深阴影颜色)',
+        position: 'relative',
+        background: '#1e2227',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
         display: 'flex',
         flexDirection: 'column',
-        width: '60vw',
-        height: '60vh',
+        overflow: 'hidden',
       },
     })
 
@@ -71,20 +73,22 @@ class 模态框管理器 {
     let 头部 = 创建元素('div', {
       style: {
         height: `${this.头部高度}px`,
-        background: 'var(--按钮背景)',
+        background: 'rgba(255, 255, 255, 0.05)',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 6px',
+        padding: '0 12px',
         justifyContent: 'space-between',
         userSelect: 'none',
+        cursor: 'move',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
       },
     })
 
-    let 标题元素 = 创建元素('span', { style: { color: 'var(--文字颜色)' } })
+    let 标题元素 = 创建元素('span', { style: { color: '#e5e7eb', fontSize: '14px', fontWeight: '600' } })
     头部.appendChild(标题元素)
 
     // 右侧按钮容器
-    let 右侧按钮容器 = 创建元素('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } })
+    let 右侧按钮容器 = 创建元素('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } })
 
     // 最大化按钮
     let 最大化按钮 = new 文本按钮({
@@ -94,7 +98,9 @@ class 模态框管理器 {
         background: 'transparent',
         cursor: 'pointer',
         fontSize: '14px',
-        color: 'var(--文字颜色)',
+        color: '#9ca3af',
+        padding: '4px',
+        borderRadius: '4px',
       },
       标题: '最大化',
       点击处理函数: (): void => {
@@ -107,12 +113,14 @@ class 模态框管理器 {
     let 关闭按钮 = new 文本按钮({
       文本: '✕',
       元素样式: {
-        padding: '0',
-        fontSize: '16px',
-        color: 'red',
+        padding: '4px',
+        fontSize: '14px',
+        color: '#ef4444',
         fontWeight: 'bold',
         border: 'none',
         background: 'transparent',
+        cursor: 'pointer',
+        borderRadius: '4px',
       },
       点击处理函数: async (): Promise<void> => {
         await this.关闭()
@@ -123,11 +131,53 @@ class 模态框管理器 {
     头部.appendChild(右侧按钮容器)
 
     // 内容
-    let 内容 = 创建元素('div', { style: { flex: '1', overflow: 'auto', width: '60vw', height: '80vh' } })
+    let 内容 = 创建元素('div', { style: { flex: '1', overflow: 'auto' } })
 
     框.appendChild(头部)
     框.appendChild(内容)
     遮罩.appendChild(框)
+
+    // 拖拽逻辑
+    let 拖拽中 = false
+    let 偏移X = 0
+    let 偏移Y = 0
+
+    头部.onmousedown = (e: MouseEvent): void => {
+      let 栈索引 = this.模态框栈.findIndex((项) => 项.框 === 框)
+      let 栈项 = this.模态框栈[栈索引]
+      if (栈索引 === -1 || 栈项 === undefined || 栈项.是否最大化) return
+
+      拖拽中 = true
+      let 矩形 = 框.getBoundingClientRect()
+      偏移X = e.clientX - 矩形.left
+      偏移Y = e.clientY - 矩形.top
+
+      // 立即设置位置，防止闪烁
+      框.style.transition = 'none'
+      框.style.position = 'absolute'
+      框.style.left = `${矩形.left}px`
+      框.style.top = `${矩形.top}px`
+      框.style.margin = '0'
+      框.style.transform = 'none'
+
+      遮罩.style.justifyContent = 'flex-start'
+      遮罩.style.alignItems = 'flex-start'
+
+      let 移动处理 = (me: MouseEvent): void => {
+        if (!拖拽中) return
+        框.style.left = `${me.clientX - 偏移X}px`
+        框.style.top = `${me.clientY - 偏移Y}px`
+      }
+
+      let 停止处理 = (): void => {
+        拖拽中 = false
+        window.removeEventListener('mousemove', 移动处理)
+        window.removeEventListener('mouseup', 停止处理)
+      }
+
+      window.addEventListener('mousemove', 移动处理)
+      window.addEventListener('mouseup', 停止处理)
+    }
 
     return { 遮罩, 框, 头部, 内容, 最大化按钮, 关闭按钮, 标题元素 }
   }
@@ -138,30 +188,37 @@ class 模态框管理器 {
 
     栈项.是否最大化 = 栈项.是否最大化 === false
 
-    let { 框, 内容容器, 遮罩, 最大化按钮 } = 栈项
+    let { 框, 内容容器, 遮罩, 最大化按钮, 选项 } = 栈项
 
     if (栈项.是否最大化 === true) {
       框.style.width = '100vw'
       框.style.height = '100vh'
+      框.style.maxHeight = 'none'
       框.style.left = '0'
       框.style.top = '0'
       框.style.transform = 'none'
+      框.style.borderRadius = '0'
       遮罩.style.justifyContent = 'flex-start'
       遮罩.style.alignItems = 'flex-start'
       内容容器.style.width = '100%'
       内容容器.style.height = `calc(100vh - ${this.头部高度}px)`
+      内容容器.style.maxHeight = 'none'
       最大化按钮.设置文本('🗗')
       最大化按钮.设置标题('还原')
     } else {
       框.style.width = 栈项.当前宽度
       框.style.height = 栈项.当前高度
+      框.style.maxHeight = 选项.最大高度 ?? 'none'
       框.style.left = ''
       框.style.top = ''
+      框.style.position = 'relative'
       框.style.transform = ''
+      框.style.borderRadius = '12px'
       遮罩.style.justifyContent = 'center'
       遮罩.style.alignItems = 'center'
-      内容容器.style.width = 栈项.当前宽度
-      内容容器.style.height = 栈项.当前高度
+      内容容器.style.width = '100%'
+      内容容器.style.height = 栈项.当前高度 === 'auto' ? 'auto' : '100%'
+      内容容器.style.maxHeight = 选项.最大高度 !== undefined ? `calc(${选项.最大高度} - ${this.头部高度}px)` : 'none'
       最大化按钮.设置文本('□')
       最大化按钮.设置标题('最大化')
     }
@@ -209,6 +266,7 @@ class 模态框管理器 {
       框.style.left = '0'
       框.style.top = '0'
       框.style.transform = 'none'
+      框.style.borderRadius = '0'
       遮罩.style.justifyContent = 'flex-start'
       遮罩.style.alignItems = 'flex-start'
       内容容器.style.width = '100%'
@@ -218,13 +276,15 @@ class 模态框管理器 {
     } else {
       框.style.width = 当前宽度
       框.style.height = 当前高度
+      if (选项.最大高度 !== undefined) 框.style.maxHeight = 选项.最大高度
       框.style.left = ''
       框.style.top = ''
       框.style.transform = ''
       遮罩.style.justifyContent = 'center'
       遮罩.style.alignItems = 'center'
-      内容容器.style.width = 当前宽度
-      内容容器.style.height = 当前高度
+      内容容器.style.width = '100%'
+      内容容器.style.height = 当前高度 === 'auto' ? 'auto' : '100%'
+      内容容器.style.maxHeight = 选项.最大高度 !== undefined ? `calc(${选项.最大高度} - ${this.头部高度}px)` : 'none'
       最大化按钮.设置文本('□')
       最大化按钮.设置标题('最大化')
     }

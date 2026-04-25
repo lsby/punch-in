@@ -23,34 +23,53 @@ export class 右键菜单管理器 {
     let 菜单容器 = 创建元素('div', {
       style: {
         position: 'fixed',
-        backgroundColor: 'var(--主要背景颜色)',
-        border: '1px solid var(--边框颜色)',
-        borderRadius: '8px',
-        padding: '6px 0',
-        boxShadow: '0 4px 12px var(--深阴影颜色)',
+        backgroundColor: '#1e2227',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '12px',
+        padding: '6px',
+        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4)',
         zIndex: '10000',
         minWidth: '160px',
-        backdropFilter: 'blur(8px)',
+        backdropFilter: 'blur(12px)',
         userSelect: 'none',
+        overflow: 'hidden',
       },
     })
 
     for (let 菜单项 of 菜单项列表) {
       if (菜单项 === '分隔符') {
         let 分隔符 = 创建元素('div', {
-          style: { height: '1px', backgroundColor: 'var(--边框颜色)', margin: '4px 0', opacity: '0.5' },
+          style: { height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '4px 6px' },
         })
         菜单容器.appendChild(分隔符)
         continue
       }
 
       let 项元素 = 创建元素('div', {
-        className: 'context-menu-item',
         textContent: 菜单项.文本,
+        style: {
+          padding: '8px 12px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          color: '#e5e7eb',
+          fontSize: '13px',
+          transition: 'all 0.2s',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        },
         onclick: async (): Promise<void> => {
           let 回调 = 菜单项.回调
           this.隐藏菜单()
           await 回调()
+        },
+        onmouseenter: (): void => {
+          项元素.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'
+          项元素.style.color = '#fff'
+        },
+        onmouseleave: (): void => {
+          项元素.style.backgroundColor = 'transparent'
+          项元素.style.color = '#e5e7eb'
         },
       })
       菜单容器.appendChild(项元素)

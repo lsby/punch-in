@@ -1,8 +1,9 @@
 import { 组件基类 } from '../../base/base'
+import { 右键菜单管理器 } from '../../global/manager/context-menu-manager'
 import { 创建元素 } from '../../global/tools/create-element'
 import { 打开规则编辑模态框 } from './video-editor/video-editor-rule-modal'
 import { 裁剪规则 } from './video-editor/video-editor-types'
-import { 计算排除片段 } from './video-editor/video-editor-utils'
+import { 生成规则展示信息, 计算排除片段 } from './video-editor/video-editor-utils'
 import { 视频预览组件 } from './video-editor/video-preview'
 import { 视频时间轴组件 } from './video-editor/video-timeline'
 
@@ -148,87 +149,161 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         )
       } else {
         当前规则列表.forEach((规则, index) => {
+          let { 描述, 标签列表 } = 生成规则展示信息(规则)
+
           let 规则项 = 创建元素('div', {
             style: {
-              backgroundColor: '#232830',
-              padding: '12px',
-              borderRadius: '8px',
-              border: '1px solid #333',
+              backgroundColor: '#1e242c',
+              padding: '16px',
+              borderRadius: '12px',
+              border: '1px solid #2d333b',
               display: 'flex',
               flexDirection: 'column',
-              gap: '4px',
+              gap: '10px',
+              transition: 'all 0.2s',
+              opacity: 规则.已禁用 === true ? '0.5' : '1',
+              filter: 规则.已禁用 === true ? 'grayscale(0.8)' : 'none',
             },
-          })
-          let 标题行 = 创建元素('div', {
-            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-          })
-          let 标题 = 创建元素('span', {
-            textContent: 规则.名称,
-            style: { fontWeight: 'bold', color: '#fff', fontSize: '14px' },
-          })
-          let 上移按钮 = 创建元素('button', {
-            textContent: '↑',
-            style: { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px' },
-          })
-          let 下移按钮 = 创建元素('button', {
-            textContent: '↓',
-            style: { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px' },
-          })
-          let 编辑按钮 = 创建元素('button', {
-            textContent: '编辑',
-            style: {
-              background: 'none',
-              border: 'none',
-              color: '#60a5fa',
-              cursor: 'pointer',
-              fontSize: '12px',
-              marginLeft: '4px',
-              marginRight: '4px',
-            },
-          })
-          let 删除按钮 = 创建元素('button', {
-            textContent: '删除',
-            style: { background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' },
           })
 
-          上移按钮.onclick = (): void => {
-            if (index > 0) {
-              let 当前项 = 当前规则列表[index]
-              if (当前项 === undefined) throw new Error('意外的空值')
-              let 前一项 = 当前规则列表[index - 1]
-              if (前一项 === undefined) throw new Error('意外的空值')
-              当前规则列表[index] = 前一项
-              当前规则列表[index - 1] = 当前项
-              重新计算规则()
-            }
+          规则项.oncontextmenu = (e): void => {
+            e.preventDefault()
+            右键菜单管理器.获得实例().显示菜单(e.clientX, e.clientY, [
+              {
+                文本: 规则.已禁用 === true ? '启用规则' : '禁用规则',
+                回调: async (): Promise<void> => {
+                  规则.已禁用 = 规则.已禁用 !== true
+                  重新计算规则()
+                },
+              },
+              '分隔符',
+              {
+                文本: '编辑规则',
+                回调: async (): Promise<void> => {
+                  await 打开规则编辑模态框(规则, (修改后的规则) => {
+                    当前规则列表[index] = 修改后的规则
+                    重新计算规则()
+                  })
+                },
+              },
+              {
+                文本: '删除规则',
+                回调: async (): Promise<void> => {
+                  当前规则列表.splice(index, 1)
+                  重新计算规则()
+                },
+              },
+            ])
           }
-          下移按钮.onclick = (): void => {
-            if (index < 当前规则列表.length - 1) {
-              let 当前项 = 当前规则列表[index]
-              if (当前项 === undefined) throw new Error('意外的空值')
-              let 后一项 = 当前规则列表[index + 1]
-              if (后一项 === undefined) throw new Error('意外的空值')
-              当前规则列表[index] = 后一项
-              当前规则列表[index + 1] = 当前项
-              重新计算规则()
-            }
-          }
-          编辑按钮.onclick = async (): Promise<void> => {
-            await 打开规则编辑模态框(规则, (修改后的规则) => {
-              当前规则列表[index] = 修改后的规则
-              重新计算规则()
+
+          let 顶部行 = 创建元素('div', {
+            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+          })
+
+          let 标签容器 = 创建元素('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', flex: '1' } })
+
+          if (标签列表.length === 0) {
+            标签容器.append(
+              创建元素('span', {
+                textContent: '全选',
+                style: {
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  backgroundColor: '#333',
+                  color: '#aaa',
+                },
+              }),
+            )
+          } else {
+            标签列表.forEach((text) => {
+              标签容器.append(
+                创建元素('span', {
+                  textContent: text,
+                  style: {
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(129, 140, 248, 0.15)',
+                    color: '#818cf8',
+                    border: '1px solid rgba(129, 140, 248, 0.2)',
+                  },
+                }),
+              )
             })
           }
-          删除按钮.onclick = (): void => {
-            当前规则列表.splice(index, 1)
-            重新计算规则()
+
+          let 操作组 = 创建元素('div', { style: { display: 'flex', gap: '4px' } })
+          let 创建操作按钮 = (icon: string, color: string, onclick: () => void): HTMLButtonElement => {
+            let btn = 创建元素('button', {
+              textContent: icon,
+              style: {
+                background: 'none',
+                border: 'none',
+                color: color,
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '4px',
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background 0.2s',
+              },
+            })
+            btn.onmouseenter = (): void => {
+              btn.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
+            }
+            btn.onmouseleave = (): void => {
+              btn.style.backgroundColor = 'transparent'
+            }
+            btn.onclick = onclick
+            return btn
           }
 
-          let 按钮组 = 创建元素('div', { style: { display: 'flex', alignItems: 'center' } })
-          按钮组.append(上移按钮, 下移按钮, 编辑按钮, 删除按钮)
-          标题行.append(标题, 按钮组)
-          let 描述 = 创建元素('span', { textContent: 规则.描述, style: { color: '#888', fontSize: '12px' } })
-          规则项.append(标题行, 描述)
+          操作组.append(
+            创建操作按钮('↑', '#fff', () => {
+              if (index > 0) {
+                let temp = 当前规则列表[index]
+                if (temp === undefined) throw new Error('意外的空值')
+                let prev = 当前规则列表[index - 1]
+                if (prev === undefined) throw new Error('意外的空值')
+                当前规则列表[index] = prev
+                当前规则列表[index - 1] = temp
+                重新计算规则()
+              }
+            }),
+            创建操作按钮('↓', '#fff', () => {
+              if (index < 当前规则列表.length - 1) {
+                let temp = 当前规则列表[index]
+                if (temp === undefined) throw new Error('意外的空值')
+                let next = 当前规则列表[index + 1]
+                if (next === undefined) throw new Error('意外的空值')
+                当前规则列表[index] = next
+                当前规则列表[index + 1] = temp
+                重新计算规则()
+              }
+            }),
+            创建操作按钮('✎', '#60a5fa', async () => {
+              await 打开规则编辑模态框(规则, (修改后的规则) => {
+                当前规则列表[index] = 修改后的规则
+                重新计算规则()
+              })
+            }),
+            创建操作按钮('✕', '#ef4444', () => {
+              当前规则列表.splice(index, 1)
+              重新计算规则()
+            }),
+          )
+
+          顶部行.append(标签容器, 操作组)
+
+          let 描述行 = 创建元素('div', {
+            textContent: 描述,
+            style: { color: '#9ca3af', fontSize: '12px', fontWeight: '500' },
+          })
+
+          规则项.append(顶部行, 描述行)
           规则列表容器.append(规则项)
         })
       }

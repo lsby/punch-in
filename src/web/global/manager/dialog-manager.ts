@@ -11,7 +11,8 @@ export function 显示对话框(消息: string): Promise<void> {
         left: '0',
         width: '100%',
         height: '100%',
-        backgroundColor: 'var(--遮罩颜色)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(4px)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -21,22 +22,22 @@ export function 显示对话框(消息: string): Promise<void> {
 
     let 对话框 = 创建元素('div', {
       style: {
-        backgroundColor: 'var(--卡片背景颜色)',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px var(--深阴影颜色)',
-        minWidth: '300px',
+        backgroundColor: '#1e2227',
+        padding: '24px',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+        minWidth: '320px',
         maxWidth: '500px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
-        border: '1px solid var(--边框颜色)',
+        gap: '20px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
       },
     })
 
     let 消息元素 = 创建元素('div', {
       textContent: 消息,
-      style: { fontSize: '14px', lineHeight: '1.5', color: 'var(--文字颜色)', whiteSpace: 'pre-wrap' },
+      style: { fontSize: '15px', lineHeight: '1.6', color: '#e5e7eb', whiteSpace: 'pre-wrap' },
     })
 
     let 按钮容器 = 创建元素('div', { style: { display: 'flex', justifyContent: 'flex-end' } })
@@ -86,7 +87,8 @@ export function 显示确认对话框(消息: string, 提示?: string): Promise<
         left: '0',
         width: '100%',
         height: '100%',
-        backgroundColor: 'var(--遮罩颜色)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(4px)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -96,22 +98,22 @@ export function 显示确认对话框(消息: string, 提示?: string): Promise<
 
     let 对话框 = 创建元素('div', {
       style: {
-        backgroundColor: 'var(--卡片背景颜色)',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px var(--深阴影颜色)',
-        minWidth: '300px',
+        backgroundColor: '#1e2227',
+        padding: '24px',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+        minWidth: '320px',
         maxWidth: '500px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
-        border: '1px solid var(--边框颜色)',
+        gap: '20px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
       },
     })
 
     let 消息元素 = 创建元素('div', {
       textContent: 消息,
-      style: { fontSize: '14px', lineHeight: '1.5', color: 'var(--文字颜色)', whiteSpace: 'pre-wrap' },
+      style: { fontSize: '15px', lineHeight: '1.6', color: '#e5e7eb', whiteSpace: 'pre-wrap' },
     })
 
     对话框.appendChild(消息元素)
@@ -183,7 +185,8 @@ export function 显示输入对话框(消息: string, 默认值?: string, 提示
         left: '0',
         width: '100%',
         height: '100%',
-        backgroundColor: 'var(--遮罩颜色)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(4px)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -193,22 +196,22 @@ export function 显示输入对话框(消息: string, 默认值?: string, 提示
 
     let 对话框 = 创建元素('div', {
       style: {
-        backgroundColor: 'var(--卡片背景颜色)',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px var(--深阴影颜色)',
-        minWidth: '300px',
+        backgroundColor: '#1e2227',
+        padding: '24px',
+        borderRadius: '12px',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+        minWidth: '320px',
         maxWidth: '500px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
-        border: '1px solid var(--边框颜色)',
+        gap: '20px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
       },
     })
 
     let 消息元素 = 创建元素('div', {
       textContent: 消息,
-      style: { fontSize: '14px', lineHeight: '1.5', color: 'var(--文字颜色)', whiteSpace: 'pre-wrap' },
+      style: { fontSize: '15px', lineHeight: '1.6', color: '#e5e7eb', whiteSpace: 'pre-wrap' },
     })
 
     对话框.appendChild(消息元素)
