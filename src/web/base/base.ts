@@ -68,7 +68,6 @@ export abstract class 组件基类<
     v: 发出事件类型[K],
     o?: Omit<CustomEventInit<发出事件类型[K]>, 'detail'>,
   ): boolean {
-    void this.log.debug('派发事件: %o, 数据: %O', k, v)
     return this.dispatchEvent(
       new CustomEvent(k.toString(), {
         detail: v, // 附加数据

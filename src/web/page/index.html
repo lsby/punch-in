@@ -5,10 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="../global/style/global.css" />
     <script src="../components/index.ts" type="module"></script>
-    <title>视频剪辑器</title>
+    <title>首页</title>
   </head>
 
   <body>
+    <set-theme></set-theme>
+    <lsby-set-debug 排除事件="mousemove,mouseenter,mouseleave,scroll,进度变化"></lsby-set-debug>
+    <lsby-set-html-full></lsby-set-html-full>
+    <lsby-login-check></lsby-login-check>
+
     <lsby-video-editor></lsby-video-editor>
   </body>
 </html>

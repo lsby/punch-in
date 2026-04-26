@@ -4,18 +4,16 @@ import { globalWebLog } from '../../global/manager/log-manager'
 type 发出事件类型 = {}
 type 监听事件类型 = {}
 
-type 调试配置 = { 排除事件?: string | undefined }
-
 export class 设置调试组件 extends 组件基类<发出事件类型, 监听事件类型> {
   static {
     this.注册组件('lsby-set-debug', this)
   }
 
-  private 配置: 调试配置
-
-  public constructor(配置: 调试配置 = {}) {
+  public constructor(配置?: { 排除事件?: string }) {
     super()
-    this.配置 = 配置
+    if (配置?.排除事件 !== undefined) {
+      this.setAttribute('排除事件', 配置.排除事件)
+    }
   }
 
   protected override async 当加载时(): Promise<void> {
@@ -27,10 +25,8 @@ export class 设置调试组件 extends 组件基类<发出事件类型, 监听�
     } else {
       localStorage['debug'] = '*'
 
-      let 排除事件: string[] = []
-      if (this.配置.排除事件 !== undefined) {
-        排除事件 = this.配置.排除事件.split(',')
-      }
+      let 排除事件属性 = this.getAttribute('排除事件')
+      let 排除事件: string[] = 排除事件属性 !== null ? 排除事件属性.split(',').map((s) => s.trim()) : []
 
       // 劫持 addEventListener
       let originalAddEventListener = EventTarget.prototype.addEventListener

@@ -3,17 +3,12 @@ import { 创建元素 } from '../../global/tools/create-element'
 import { 悬浮管理组件 } from '../general/management-float'
 import { 横向tab组件 } from '../general/tabs/tabs-horizontal'
 import { 纵向tab组件 } from '../general/tabs/tabs-vertical'
-import { 检查登录组件 } from '../process/login-check'
-import { 设置调试组件 } from '../process/set-debug'
-import { 设置网页全屏组件 } from '../process/set-html-full'
-import { 设置主题组件 } from '../process/set-theme'
 
 // 业务组件
 import { 演示跳转组件 } from '../demo/to-demo'
 import { 软件版本组件 } from '../general/version'
 import { 用户设置组件 } from './user/settings'
 import { 用户信息组件 } from './user/user-profile'
-import { 视频剪辑页面组件 } from './video-editor'
 
 type 发出事件类型 = {}
 type 监听事件类型 = {}
@@ -24,12 +19,6 @@ export class 首页组件 extends 组件基类<发出事件类型, 监听事件�
   }
 
   protected override async 当加载时(): Promise<void> {
-    // 初始化基础组件
-    this.shadow.append(new 设置主题组件())
-    this.shadow.append(new 设置调试组件({ 排除事件: 'mousemove,mouseenter,mouseleave,scroll' }))
-    this.shadow.append(new 设置网页全屏组件())
-    this.shadow.append(new 检查登录组件())
-
     // 布局
     let tabs = new 横向tab组件()
 
@@ -62,11 +51,6 @@ export class 首页组件 extends 组件基类<发出事件类型, 监听事件�
     })
     演示容器.append(new 演示跳转组件())
     tabs.添加标签页({ 标签: '演示' }, 演示容器)
-
-    // 视频剪辑标签页
-    let 视频剪辑容器 = 创建元素('div', { style: { width: '100%', height: '100%', overflow: 'hidden' } })
-    视频剪辑容器.append(new 视频剪辑页面组件())
-    tabs.添加标签页({ 标签: '视频剪辑' }, 视频剪辑容器)
 
     // 系统标签页
     let 系统容器 = 创建元素('div', {
