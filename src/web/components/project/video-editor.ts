@@ -184,67 +184,124 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         padding: '8px 24px',
         backgroundColor: '#dc2626',
         color: '#fff',
-        border: 'none',
-        borderRadius: '6px',
+        border: '1px solid #ef4444',
+        borderRadius: '8px',
         fontWeight: 'bold',
         cursor: 'pointer',
         fontSize: '14px',
-        transition: 'all 0.3s',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        outline: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
       },
     })
+    录制按钮.onmouseenter = (): void => {
+      let 正在录制 = this.录制器 !== null && this.录制器.state === 'recording'
+      录制按钮.style.backgroundColor = 正在录制 ? '#6b7280' : '#ef4444'
+      录制按钮.style.transform = 'translateY(-1px)'
+      录制按钮.style.boxShadow = 正在录制 ? 'none' : '0 4px 12px rgba(239, 68, 68, 0.3)'
+    }
+    录制按钮.onmouseleave = (): void => {
+      let 正在录制 = this.录制器 !== null && this.录制器.state === 'recording'
+      录制按钮.style.backgroundColor = 正在录制 ? '#4b5563' : '#dc2626'
+      录制按钮.style.transform = 'translateY(0)'
+      录制按钮.style.boxShadow = 正在录制 ? 'none' : '0 2px 4px rgba(0,0,0,0.2)'
+    }
 
     let 选择屏幕按钮 = 创建元素('button', {
       textContent: '🖥 选择录制屏幕',
       style: {
         padding: '8px 16px',
-        backgroundColor: '#374151',
-        color: '#d1d5db',
-        border: '1px solid #4b5563',
-        borderRadius: '6px',
+        backgroundColor: '#2d333b',
+        color: '#adbac7',
+        border: '1px solid #444c56',
+        borderRadius: '8px',
         cursor: 'pointer',
         fontSize: '14px',
         marginLeft: 'auto',
+        outline: 'none',
+        transition: 'all 0.2s',
       },
     })
+    选择屏幕按钮.onmouseenter = (): void => {
+      选择屏幕按钮.style.backgroundColor = '#444c56'
+      选择屏幕按钮.style.borderColor = '#768390'
+    }
+    选择屏幕按钮.onmouseleave = (): void => {
+      选择屏幕按钮.style.backgroundColor = '#2d333b'
+      选择屏幕按钮.style.borderColor = '#444c56'
+    }
 
     let 撤销按钮 = 创建元素('button', {
       textContent: '↩️ 撤销',
       style: {
         padding: '8px 16px',
-        backgroundColor: '#374151',
-        color: '#d1d5db',
-        border: '1px solid #4b5563',
-        borderRadius: '6px',
+        backgroundColor: '#2d333b',
+        color: '#adbac7',
+        border: '1px solid #444c56',
+        borderRadius: '8px',
         cursor: 'pointer',
         fontSize: '14px',
+        outline: 'none',
+        transition: 'all 0.2s',
       },
     })
+    撤销按钮.onmouseenter = (): void => {
+      撤销按钮.style.backgroundColor = '#444c56'
+      撤销按钮.style.borderColor = '#768390'
+    }
+    撤销按钮.onmouseleave = (): void => {
+      撤销按钮.style.backgroundColor = '#2d333b'
+      撤销按钮.style.borderColor = '#444c56'
+    }
 
     let 重做按钮 = 创建元素('button', {
       textContent: '↪️ 重做',
       style: {
         padding: '8px 16px',
-        backgroundColor: '#374151',
-        color: '#d1d5db',
-        border: '1px solid #4b5563',
-        borderRadius: '6px',
+        backgroundColor: '#2d333b',
+        color: '#adbac7',
+        border: '1px solid #444c56',
+        borderRadius: '8px',
         cursor: 'pointer',
         fontSize: '14px',
+        outline: 'none',
+        transition: 'all 0.2s',
       },
     })
+    重做按钮.onmouseenter = (): void => {
+      重做按钮.style.backgroundColor = '#444c56'
+      重做按钮.style.borderColor = '#768390'
+    }
+    重做按钮.onmouseleave = (): void => {
+      重做按钮.style.backgroundColor = '#2d333b'
+      重做按钮.style.borderColor = '#444c56'
+    }
 
     let 切换混音器按钮 = 创建元素('button', {
       textContent: '🎚️ 混音器',
       style: {
         padding: '8px 16px',
-        backgroundColor: '#374151',
-        color: '#d1d5db',
-        border: '1px solid #4b5563',
-        borderRadius: '6px',
+        backgroundColor: '#2d333b',
+        color: '#adbac7',
+        border: '1px solid #444c56',
+        borderRadius: '8px',
         cursor: 'pointer',
         fontSize: '14px',
+        outline: 'none',
+        transition: 'all 0.2s',
       },
     })
+    切换混音器按钮.onmouseenter = (): void => {
+      切换混音器按钮.style.backgroundColor = '#444c56'
+      切换混音器按钮.style.borderColor = '#768390'
+    }
+    切换混音器按钮.onmouseleave = (): void => {
+      切换混音器按钮.style.backgroundColor = '#2d333b'
+      切换混音器按钮.style.borderColor = '#444c56'
+    }
 
     顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮)
 
@@ -344,7 +401,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         this.录制器.stop()
         录制按钮.textContent = '🔴 开始录制'
         录制按钮.style.backgroundColor = '#dc2626'
+        录制按钮.style.borderColor = '#ef4444'
         录制按钮.style.animation = 'none'
+        录制按钮.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
         return
       }
 
@@ -459,7 +518,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
       录制按钮.textContent = '⏹ 停止录制'
       录制按钮.style.backgroundColor = '#4b5563'
+      录制按钮.style.borderColor = '#6b7280'
       录制按钮.style.animation = 'pulse 1.5s infinite'
+      录制按钮.style.boxShadow = 'none'
     }
 
     // 事件联动
