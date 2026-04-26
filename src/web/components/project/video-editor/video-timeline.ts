@@ -168,6 +168,9 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
 
     this.轨道容器.onmousedown = (e: MouseEvent): void => {
+      if (this.轨道容器 !== null && (e.offsetX > this.轨道容器.clientWidth || e.offsetY > this.轨道容器.clientHeight)) {
+        return
+      }
       if (e.target === this.轨道容器 || e.target === this.内容层) {
         this.交互层?.dispatchEvent(new MouseEvent('mousedown', e))
       }

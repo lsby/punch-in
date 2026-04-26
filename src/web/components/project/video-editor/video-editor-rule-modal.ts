@@ -192,22 +192,26 @@ export async function 打开规则编辑模态框(
   微调内容.append(微调符号, 微调值, 创建元素('span', { textContent: '秒' }))
   微调容器.append(微调内容)
 
+  微调分组.内容区.append(微调容器)
+
+  // --- 3. 全局配置 ---
+  let 全局配置分组 = 创建分组('全局配置')
   let 过滤容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } })
-  过滤容器.append(创建元素('span', { textContent: '作用筛选:', style: { fontWeight: '500' } }))
+  过滤容器.append(创建元素('span', { textContent: '最小片段:', style: { fontWeight: '500' } }))
   let 过滤内容 = 创建元素('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } })
   let 过滤值 = 创建元素('input', {
     type: 'number',
     value: 已有规则 !== undefined ? 已有规则.二次处理.强制过滤时长.toString() : '0.1',
     step: '0.01',
     min: '0',
-    style: { ...输入项样式, width: '60px' },
+    style: { ...输入项样式, width: '100%' },
   })
-  过滤内容.append(过滤值, 创建元素('span', { textContent: '秒 (忽略短于此值的片段)' }))
+  过滤内容.append(过滤值, 创建元素('span', { textContent: '秒' }))
   过滤容器.append(过滤内容)
 
-  微调分组.内容区.append(微调容器, 过滤容器)
+  全局配置分组.内容区.append(过滤容器)
 
-  // --- 3. 行为 ---
+  // --- 4. 行为 ---
   let 行为分组 = 创建分组('行为')
 
   let 行为容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } })
@@ -248,7 +252,7 @@ export async function 打开规则编辑模态框(
     确定按钮.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.2)'
   }
 
-  容器.append(状态分组.容器, 选择部分分组.容器, 微调分组.容器, 行为分组.容器, 确定按钮)
+  容器.append(状态分组.容器, 全局配置分组.容器, 选择部分分组.容器, 微调分组.容器, 行为分组.容器, 确定按钮)
 
   确定按钮.onclick = (): void => {
     let 新规则: 裁剪规则 = {
