@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, screen } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { App } from './app/app'
@@ -13,6 +13,10 @@ import { 启动异常兜底 } from './tools/fallback'
 async function main(): Promise<void> {
   启动异常兜底()
   try {
+    ipcMain.handle('获取屏幕列表', async () => {
+      let sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
+      return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }))
+    })
     await init()
     await new App().run()
   } catch (error) {
@@ -48,9 +52,10 @@ async function 创建主窗口(): Promise<void> {
 
   let 预加载脚本 = [
     '// 该文件由脚本自动生成, 请勿修改.',
-    "const { contextBridge, webUtils } = require('electron')",
+    "const { contextBridge, webUtils, ipcRenderer } = require('electron')",
     "contextBridge.exposeInMainWorld('electronAPI', {",
-    '  获取文件路径: (file) => webUtils.getPathForFile(file)',
+    '  获取文件路径: (file) => webUtils.getPathForFile(file),',
+    '  获取屏幕列表: () => ipcRenderer.invoke("获取屏幕列表")',
     '})',
     '',
   ].join('\n')

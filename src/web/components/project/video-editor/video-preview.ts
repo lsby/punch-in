@@ -4,6 +4,12 @@ import { 创建元素 } from '../../../global/tools/create-element'
 type 发出事件类型 = { 播放状态变化: boolean; 进度变化: number }
 type 监听事件类型 = {}
 
+export interface 视频片段 {
+  url: string
+  start: number
+  duration: number
+}
+
 export class 视频预览组件 extends 组件基类<发出事件类型, 监听事件类型> {
   static {
     this.注册组件('lsby-video-preview', this)
@@ -16,6 +22,10 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   private 反馈动画定时器ID: any = null
   private 排除片段: { start: number; end: number }[] = []
   private 上一个跳越的片段: { start: number; end: number } | null = null
+
+  private 播放列表: 视频片段[] = []
+  private 当前播放索引: number = -1
+  private 当前全局时间: number = 0
 
   private 键盘监听器: (e: KeyboardEvent) => void = (e) => {
     if (e.code === 'Space') {
@@ -73,6 +83,10 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
 
     video.onpause = (): void => {
+      // 如果是因为播放结束而暂停，并且不是最后一个片段，那么交给 onended 处理，不要打断状态
+      if (video.ended && this.当前播放索引 < this.播放列表.length - 1) {
+        return
+      }
       this.停止进度循环()
       this.更新状态标签(false)
     }
@@ -86,13 +100,32 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
 
     video.onended = (): void => {
+      if (this.当前播放索引 < this.播放列表.length - 1) {
+        let 当前片段 = this.播放列表[this.当前播放索引]
+        let 下一个片段 = this.播放列表[this.当前播放索引 + 1]
+        if (当前片段 !== undefined && 下一个片段 !== undefined) {
+          let 全局时间 = 当前片段.start + video.currentTime
+          this.当前播放索引++
+          video.src = 下一个片段.url
+          video.currentTime = Math.max(0, 全局时间 - 下一个片段.start)
+          void video.play().catch(() => {})
+          this.开始进度循环()
+          return
+        }
+      }
       this.停止进度循环()
       this.更新状态标签(false)
+      this.派发事件('播放状态变化', false)
     }
 
     video.ontimeupdate = (): void => {
       if (video.paused) {
-        this.派发事件('进度变化', video.currentTime)
+        let 当前片段 = this.播放列表[this.当前播放索引]
+        if (当前片段 !== undefined) {
+          this.派发事件('进度变化', 当前片段.start + video.currentTime)
+        } else {
+          this.派发事件('进度变化', video.currentTime)
+        }
       }
     }
 
@@ -170,20 +203,45 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     let 循环 = (): void => {
       let video = this.播放器
       if (video !== null && !video.paused) {
-        let 当前时间 = video.currentTime
-        let 命中的片段 = this.排除片段.find((s) => 当前时间 >= s.start && 当前时间 < s.end)
+        let 当前片段 = this.播放列表[this.当前播放索引]
+        if (当前片段 === undefined) {
+          this.进度循环ID = requestAnimationFrame(循环)
+          return
+        }
+
+        let 局部时间 = video.currentTime
+        let 全局时间 = 当前片段.start + 局部时间
+
+        if (局部时间 >= 当前片段.duration && this.当前播放索引 < this.播放列表.length - 1) {
+          let 下一个片段 = this.播放列表[this.当前播放索引 + 1]
+          if (下一个片段 !== undefined) {
+            this.当前播放索引++
+            video.src = 下一个片段.url
+            video.currentTime = 全局时间 - 下一个片段.start
+            void video.play().catch(() => {})
+            this.进度循环ID = requestAnimationFrame(循环)
+            return
+          }
+        } else if (局部时间 >= 当前片段.duration && this.当前播放索引 === this.播放列表.length - 1) {
+          video.pause()
+          this.更新状态标签(false)
+          this.派发事件('播放状态变化', false)
+        }
+
+        this.当前全局时间 = 全局时间
+
+        let 命中的片段 = this.排除片段.find((s) => 全局时间 >= s.start && 全局时间 < s.end)
 
         if (命中的片段 !== undefined) {
           // 如果刚刚已经对这个片段发出过跳越指令，由于视频关键帧或浮点数问题可能还没完全爬出这个区间
           // 我们就不再重复发跳越指令，让播放器自然播放完这最后一点点误差时间
           if (this.上一个跳越的片段 !== 命中的片段 && !video.seeking) {
             this.上一个跳越的片段 = 命中的片段
-            video.currentTime = 命中的片段.end
-            this.派发事件('进度变化', video.currentTime)
+            this.跳转(命中的片段.end)
           }
         } else {
           this.上一个跳越的片段 = null
-          this.派发事件('进度变化', 当前时间)
+          this.派发事件('进度变化', 全局时间)
         }
         this.进度循环ID = requestAnimationFrame(循环)
       } else {
@@ -205,25 +263,47 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   }
 
   public 获取视频时长(): number {
-    return this.播放器 !== null && !isNaN(this.播放器.duration) ? this.播放器.duration : 0
+    if (this.播放列表.length === 0) return 0
+    let last = this.播放列表[this.播放列表.length - 1]
+    return last !== undefined ? last.start + last.duration : 0
+  }
+
+  public 设置播放列表(列表: 视频片段[]): void {
+    this.播放列表 = 列表
+    this.跳转(this.当前全局时间)
   }
 
   public 设置视频源(url: string): void {
     void this.log.info('设置视频源:', url)
+    this.设置播放列表([{ url, start: 0, duration: Infinity }])
+  }
+
+  public 设置视频流(流: MediaStream | null): void {
+    void this.log.info('设置视频流')
     if (this.播放器 === null) return
     this.播放器.pause()
-    this.播放器.currentTime = 0
-    this.播放器.src = url
-    this.播放器.load()
-    this.播放器.muted = false
-    this.更新状态标签(false)
-    this.派发事件('播放状态变化', false)
-    this.派发事件('进度变化', 0)
+    this.播放器.src = ''
+    this.播放器.srcObject = 流
+    if (流 !== null) {
+      this.播放器.muted = true // 录制时避免回音
+      void this.播放器.play().catch(() => {})
+    }
   }
 
   public 切换播放状态(): void {
     if (this.播放器 === null) return
     if (this.播放器.paused) {
+      if (this.播放列表.length > 0) {
+        let lastSegment = this.播放列表[this.播放列表.length - 1]
+        if (lastSegment !== undefined) {
+          let endTime = lastSegment.start + lastSegment.duration
+          let isEnded = this.当前播放索引 === this.播放列表.length - 1 && this.播放器.ended
+          if (isEnded || this.当前全局时间 >= endTime - 0.1) {
+            this.跳转(0)
+          }
+        }
+      }
+
       void this.播放器.play()
       this.派发事件('播放状态变化', true)
       this.执行状态反馈(true)
@@ -284,12 +364,43 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }, 600)
   }
 
-  public 跳转(时间: number): void {
+  public 跳转(全局时间: number): void {
+    this.当前全局时间 = 全局时间
     if (this.播放器 !== null) {
-      let 原本在播放 = !this.播放器.paused
-      this.播放器.currentTime = 时间
-      if (原本在播放) {
-        void this.播放器.play().catch(() => {})
+      if (this.播放列表.length === 0) {
+        this.播放器.src = ''
+        this.播放器.load()
+        this.更新状态标签(false)
+        return
+      }
+
+      let 目标索引 = this.播放列表.findIndex((p) => 全局时间 >= p.start && 全局时间 < p.start + p.duration)
+      if (目标索引 === -1) {
+        let 最后一个 = this.播放列表[this.播放列表.length - 1]
+        if (最后一个 !== undefined && 全局时间 >= 最后一个.start + 最后一个.duration) {
+          目标索引 = this.播放列表.length - 1
+        }
+      }
+
+      if (目标索引 !== -1) {
+        let 目标片段 = this.播放列表[目标索引]
+        if (目标片段 !== undefined) {
+          let 原本在播放 = !this.播放器.paused
+
+          if (this.当前播放索引 !== 目标索引 || this.播放器.src !== 目标片段.url) {
+            this.播放器.src = 目标片段.url
+            this.当前播放索引 = 目标索引
+            this.播放器.muted = false
+          }
+
+          let 局部时间 = 全局时间 - 目标片段.start
+          this.播放器.currentTime = 局部时间
+
+          this.更新状态标签(原本在播放)
+          if (原本在播放) {
+            void this.播放器.play().catch(() => {})
+          }
+        }
       }
     }
   }

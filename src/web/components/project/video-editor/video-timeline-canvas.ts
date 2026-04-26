@@ -11,14 +11,13 @@ export type 渲染参数 = {
 
 export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): void {
   let { 当前缩放, 峰值数据, 真实时长, 滚动距离, 像素比: dpr } = 参数
-  if (峰值数据 === null || 真实时长 <= 0) return
   let ctx = 画布.getContext('2d')
   if (ctx === null) return
-
   let width = 画布.width
   let height = 画布.height
-
   ctx.clearRect(0, 0, width, height)
+
+  if (峰值数据 === null || 真实时长 <= 0) return
 
   // 渐变色波形
   let gradient = ctx.createLinearGradient(0, 0, 0, height)
@@ -40,6 +39,8 @@ export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): v
 
     let idx_start = Math.floor(t_start * 每秒点数)
     let idx_end = Math.ceil(t_end * 每秒点数)
+    if (idx_start >= 点数) continue
+
     idx_start = Math.max(0, Math.min(点数 - 1, idx_start))
     idx_end = Math.max(0, Math.min(点数, idx_end))
 
@@ -62,14 +63,13 @@ export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): v
 
 export function 绘制刻度尺(画布: HTMLCanvasElement, 参数: 渲染参数): void {
   let { 当前缩放, 真实时长, 滚动距离, 视口宽度, 像素比: dpr } = 参数
-  if (真实时长 <= 0) return
   let ctx = 画布.getContext('2d')
   if (ctx === null) return
-
   let width = 画布.width
   let height = 画布.height
-
   ctx.clearRect(0, 0, width, height)
+
+  if (真实时长 <= 0) return
 
   let 开始时间 = 滚动距离 / 当前缩放
   let 结束时间 = (滚动距离 + 视口宽度) / 当前缩放

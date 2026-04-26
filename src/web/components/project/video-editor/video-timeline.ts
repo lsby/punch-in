@@ -22,7 +22,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 波形加载遮罩: HTMLElement | null = null
   private 预览分贝标签: HTMLElement | null = null
 
-  private 默认缩放: number = 100
+  private 默认缩放: number = 20
   private 当前缩放: number = this.默认缩放
   private 是否正在拖拽进度: boolean = false
   private 峰值数据: number[] | null = null
@@ -289,19 +289,28 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   }
 
   private 执行缩放(值: number, 锚点时间?: number, 锚点偏移?: number): void {
-    if (this.轨道容器 === null || this.内容层 === null || this.真实时长 <= 0) return
-
-    let 旧缩放 = this.当前缩放
     let 最大缩放 = 1000
     let 实际缩放 = Math.max(0.1, Math.min(值, 最大缩放))
+    let 旧缩放 = this.当前缩放
+    this.当前缩放 = 实际缩放
+
+    let 总宽度 = Math.max(0, this.真实时长) * 实际缩放
+    if (this.内容层 !== null) this.内容层.style.width = `${总宽度}px`
+    if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
+
+    if (this.轨道容器 === null || this.真实时长 <= 0) {
+      this.渲染排除片段()
+      this.触发重绘()
+      return
+    }
 
     let 实际锚点时间 = 锚点时间 ?? this.当前时间
     let 实际锚点偏移 = 锚点偏移 ?? 实际锚点时间 * 旧缩放 - this.轨道容器.scrollLeft
 
     this.当前缩放 = 实际缩放
 
-    let 总宽度 = this.真实时长 * 实际缩放
-    this.内容层.style.width = `${总宽度}px`
+    总宽度 = this.真实时长 * 实际缩放
+    if (this.内容层 !== null) this.内容层.style.width = `${总宽度}px`
     if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
 
     this.轨道容器.scrollLeft = 实际锚点时间 * 实际缩放 - 实际锚点偏移
@@ -399,6 +408,27 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
   public 获取峰值数据(): number[] | null {
     return this.峰值数据
+  }
+
+  public 获取当前时间(): number {
+    return this.当前时间
+  }
+
+  public 设置峰值数据(数据: number[], 样本率: number = 100, 自动适应缩放: boolean = true): void {
+    this.峰值数据 = 数据
+    this.真实时长 = 数据.length / 样本率
+    this.全局最大峰值 = 0
+    for (let p of this.峰值数据) {
+      if (p > this.全局最大峰值) this.全局最大峰值 = p
+    }
+    if (this.真实时长 > 0) {
+      if (自动适应缩放) {
+        let 视口宽度 = this.轨道容器?.clientWidth ?? 1000
+        this.当前缩放 = Math.max(this.默认缩放, 视口宽度 / this.真实时长)
+      }
+      this.执行缩放(this.当前缩放)
+    }
+    this.触发重绘()
   }
 
   private 更新播放头(): void {

@@ -1,10 +1,8 @@
 import { 组件基类 } from '../../base/base'
-import { 右键菜单管理器 } from '../../global/manager/context-menu-manager'
+import { 关闭模态框, 显示模态框 } from '../../global/manager/modal-manager'
 import { 创建元素 } from '../../global/tools/create-element'
-import { 打开规则编辑模态框 } from './video-editor/video-editor-rule-modal'
-import { 裁剪规则 } from './video-editor/video-editor-types'
-import { 生成规则展示信息, 计算排除片段 } from './video-editor/video-editor-utils'
-import { 视频预览组件 } from './video-editor/video-preview'
+import { 视频混音器组件 } from './video-editor/video-audio-mixer'
+import { 视频片段, 视频预览组件 } from './video-editor/video-preview'
 import { 视频时间轴组件 } from './video-editor/video-timeline'
 
 type 发出事件类型 = {}
@@ -17,6 +15,135 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
   private 预览组件: 视频预览组件 | null = null
   private 时间轴组件: 视频时间轴组件 | null = null
+  private 混音器组件: 视频混音器组件 | null = null
+
+  private 当前媒体流: MediaStream | null = null
+  private 录制器: MediaRecorder | null = null
+  private 录制的数据块: Blob[] = []
+
+  private 录制循环ID: number | null = null
+  private 实时波形数据: number[] = []
+  private 录制开始时间: number = 0
+  private 音频上下文: AudioContext | null = null
+  private 切片列表: 视频片段[] = []
+  private 历史栈: { 切片列表: 视频片段[]; 实时波形数据: number[] }[] = []
+  private 重做栈: { 切片列表: 视频片段[]; 实时波形数据: number[] }[] = []
+
+  private async 弹出屏幕选择(): Promise<string | null> {
+    let api = window.electronAPI
+    if (api?.获取屏幕列表 === undefined) return null
+
+    return new Promise(async (resolve) => {
+      let 屏幕列表 = await api.获取屏幕列表()
+      let 内容容器 = 创建元素('div', {
+        style: { display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '20px', justifyContent: 'center' },
+      })
+
+      屏幕列表.forEach((屏幕) => {
+        let 卡片 = 创建元素('div', {
+          style: {
+            width: '200px',
+            backgroundColor: '#2a2e36',
+            borderRadius: '8px',
+            padding: '12px',
+            cursor: 'pointer',
+            border: '2px solid transparent',
+            transition: 'all 0.2s',
+          },
+        })
+        卡片.onmouseenter = (): void => {
+          卡片.style.borderColor = '#4f46e5'
+        }
+        卡片.onmouseleave = (): void => {
+          卡片.style.borderColor = 'transparent'
+        }
+        卡片.onclick = async (): Promise<void> => {
+          resolve(屏幕.id)
+          await 关闭模态框()
+        }
+
+        let 缩略图 = 创建元素('img', {
+          style: { width: '100%', height: '120px', objectFit: 'contain', backgroundColor: '#000', borderRadius: '4px' },
+        })
+        缩略图.src = 屏幕.thumbnail
+
+        let 名称 = 创建元素('div', {
+          textContent: 屏幕.name,
+          style: {
+            color: '#fff',
+            fontSize: '12px',
+            marginTop: '8px',
+            textAlign: 'center',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          },
+        })
+
+        卡片.append(缩略图, 名称)
+        内容容器.append(卡片)
+      })
+
+      await 显示模态框(
+        { 标题: '选择要录制的屏幕或窗口', 宽度: '800px', 高度: '600px', 关闭回调: () => resolve(null) },
+        内容容器,
+      )
+    })
+  }
+
+  private 保存历史(): void {
+    this.历史栈.push({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      切片列表: JSON.parse(JSON.stringify(this.切片列表)),
+      实时波形数据: [...this.实时波形数据],
+    })
+    this.重做栈 = []
+    if (this.历史栈.length > 50) {
+      this.历史栈.shift()
+    }
+  }
+
+  private 应用状态(状态: { 切片列表: 视频片段[]; 实时波形数据: number[] }): void {
+    this.切片列表 = 状态.切片列表
+    this.实时波形数据 = 状态.实时波形数据
+    this.预览组件?.设置播放列表(this.切片列表)
+    this.时间轴组件?.设置峰值数据(this.实时波形数据, 100, false)
+
+    // 跳转到最后一段的末尾，或者 0
+    let 结束时间 = 0
+    if (this.切片列表.length > 0) {
+      let 最后一段 = this.切片列表[this.切片列表.length - 1]
+      if (最后一段 !== undefined) {
+        结束时间 = 最后一段.start + 最后一段.duration
+      }
+    }
+    this.预览组件?.跳转(结束时间)
+    this.时间轴组件?.同步进度(结束时间)
+  }
+
+  private 执行撤销(): void {
+    let 状态 = this.历史栈.pop()
+    if (状态 !== undefined) {
+      this.重做栈.push({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        切片列表: JSON.parse(JSON.stringify(this.切片列表)),
+        实时波形数据: [...this.实时波形数据],
+      })
+      this.应用状态(状态)
+    }
+  }
+
+  private 执行重做(): void {
+    let 状态 = this.重做栈.pop()
+    if (状态 !== undefined) {
+      this.历史栈.push({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        切片列表: JSON.parse(JSON.stringify(this.切片列表)),
+        实时波形数据: [...this.实时波形数据],
+      })
+      this.应用状态(状态)
+    }
+  }
 
   protected override async 当加载时(): Promise<void> {
     this.获得宿主样式().display = 'block'
@@ -28,52 +155,100 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         width: '100%',
         height: '100vh',
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: 'column',
         padding: '20px',
         boxSizing: 'border-box',
         background: '#121212',
         color: '#fff',
         fontFamily: "'Inter', sans-serif",
-        gap: '20px',
+        gap: '16px',
       },
     })
 
-    let 左侧主内容 = 创建元素('div', {
+    // 顶部控制栏（录制按钮等）
+    let 顶部控制栏 = 创建元素('div', {
       style: {
-        flex: '1',
         display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        minWidth: '0',
-        minHeight: '0',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      },
-    })
-
-    this.预览组件 = new 视频预览组件()
-    this.时间轴组件 = new 视频时间轴组件()
-    this.时间轴组件.style.height = '280px'
-    this.时间轴组件.style.flexShrink = '0'
-
-    let 拖拽提示 = 创建元素('div', {
-      textContent: '拖入视频文件开始预览',
-      style: {
-        width: '100%',
-        height: '100%',
-        display: 'flex',
+        gap: '12px',
+        padding: '12px',
+        backgroundColor: '#1a1e23',
+        borderRadius: '12px',
+        border: '1px solid #333',
         alignItems: 'center',
-        justifyContent: 'center',
-        border: '2px dashed #333',
-        borderRadius: '16px',
-        color: '#666',
-        fontSize: '18px',
-        transition: 'all 0.3s',
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        boxSizing: 'border-box',
       },
     })
 
+    let 录制按钮 = 创建元素('button', {
+      textContent: '🔴 开始录制',
+      style: {
+        padding: '8px 24px',
+        backgroundColor: '#dc2626',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '6px',
+        fontWeight: 'bold',
+        cursor: 'pointer',
+        fontSize: '14px',
+        transition: 'all 0.3s',
+      },
+    })
+
+    let 选择屏幕按钮 = 创建元素('button', {
+      textContent: '🖥 选择录制屏幕',
+      style: {
+        padding: '8px 16px',
+        backgroundColor: '#374151',
+        color: '#d1d5db',
+        border: '1px solid #4b5563',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        marginLeft: 'auto',
+      },
+    })
+
+    let 撤销按钮 = 创建元素('button', {
+      textContent: '↩️ 撤销',
+      style: {
+        padding: '8px 16px',
+        backgroundColor: '#374151',
+        color: '#d1d5db',
+        border: '1px solid #4b5563',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '14px',
+      },
+    })
+
+    let 重做按钮 = 创建元素('button', {
+      textContent: '↪️ 重做',
+      style: {
+        padding: '8px 16px',
+        backgroundColor: '#374151',
+        color: '#d1d5db',
+        border: '1px solid #4b5563',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '14px',
+      },
+    })
+
+    let 切换混音器按钮 = 创建元素('button', {
+      textContent: '🎚️ 混音器',
+      style: {
+        padding: '8px 16px',
+        backgroundColor: '#374151',
+        color: '#d1d5db',
+        border: '1px solid #4b5563',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '14px',
+      },
+    })
+
+    顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮)
+
+    // 预览区域
     let 预览容器 = 创建元素('div', {
       style: {
         flex: '1',
@@ -82,314 +257,217 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         display: 'flex',
         flexDirection: 'column',
         boxSizing: 'border-box',
+        backgroundColor: '#000',
+        borderRadius: '12px',
+        overflow: 'hidden',
       },
     })
-    预览容器.append(拖拽提示)
+    this.预览组件 = new 视频预览组件()
+    预览容器.append(this.预览组件)
 
-    左侧主内容.append(预览容器, this.时间轴组件)
+    // 底部时间轴与混音器区域
+    let 底部容器 = 创建元素('div', {
+      style: { display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: '0' },
+    })
 
-    // ---------------- 规则面板 ----------------
-    let 右侧规则面板 = 创建元素('div', {
+    this.时间轴组件 = new 视频时间轴组件()
+    this.时间轴组件.style.height = '200px'
+
+    let 混音器包装 = 创建元素('div', {
       style: {
-        width: '320px',
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: '#1a1e23',
-        borderRadius: '16px',
-        padding: '20px',
-        gap: '16px',
-        border: '1px solid #333',
-        boxSizing: 'border-box',
+        display: 'none', // 默认隐藏
       },
     })
+    this.混音器组件 = new 视频混音器组件()
+    混音器包装.append(this.混音器组件)
 
-    let 面板标题 = 创建元素('div', {
-      textContent: '粗剪规则',
-      style: {
-        fontSize: '18px',
-        fontWeight: 'bold',
-        color: '#e0e7ff',
-        borderBottom: '1px solid #333',
-        paddingBottom: '12px',
-      },
-    })
+    底部容器.append(this.时间轴组件, 混音器包装)
 
-    let 规则列表容器 = 创建元素('div', {
-      style: { flex: '1', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' },
-    })
+    容器.append(顶部控制栏, 预览容器, 底部容器)
+    this.shadow.append(容器)
 
-    let 规则按钮容器 = 创建元素('div', {
-      style: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto' },
-    })
-
-    let 添加静音规则按钮 = 创建元素('button', {
-      textContent: '+ 添加裁剪规则',
-      style: {
-        padding: '12px',
-        borderRadius: '8px',
-        backgroundColor: 'rgba(79, 70, 229, 0.1)',
-        color: '#818cf8',
-        border: '1px dashed #4f46e5',
-        cursor: 'pointer',
-        fontWeight: '500',
-        transition: 'all 0.2s',
-      },
-    })
-    添加静音规则按钮.onmouseenter = (): void => {
-      添加静音规则按钮.style.backgroundColor = 'rgba(79, 70, 229, 0.2)'
-    }
-    添加静音规则按钮.onmouseleave = (): void => {
-      添加静音规则按钮.style.backgroundColor = 'rgba(79, 70, 229, 0.1)'
-    }
-
-    规则按钮容器.append(添加静音规则按钮)
-    右侧规则面板.append(面板标题, 规则列表容器, 规则按钮容器)
-
-    let 当前规则列表: 裁剪规则[] = []
-    let 当前排除片段: { start: number; end: number }[] = []
-
-    let 渲染规则列表 = (): void => {
-      规则列表容器.innerHTML = ''
-      if (当前规则列表.length === 0) {
-        规则列表容器.append(
-          创建元素('div', {
-            textContent: '暂无规则，播放时不会跳过任何片段。',
-            style: { color: '#666', fontSize: '14px', textAlign: 'center', marginTop: '20px' },
-          }),
-        )
+    // UI 交互逻辑
+    切换混音器按钮.onclick = (): void => {
+      if (混音器包装.style.display === 'none') {
+        混音器包装.style.display = 'block'
       } else {
-        当前规则列表.forEach((规则, index) => {
-          let { 描述, 标签列表 } = 生成规则展示信息(规则)
-
-          let 规则项 = 创建元素('div', {
-            style: {
-              backgroundColor: '#1e242c',
-              padding: '16px',
-              borderRadius: '12px',
-              border: '1px solid #2d333b',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-              transition: 'all 0.2s',
-              opacity: 规则.已禁用 === true ? '0.5' : '1',
-              filter: 规则.已禁用 === true ? 'grayscale(0.8)' : 'none',
-            },
-          })
-
-          规则项.oncontextmenu = (e): void => {
-            e.preventDefault()
-            右键菜单管理器.获得实例().显示菜单(e.clientX, e.clientY, [
-              {
-                文本: 规则.已禁用 === true ? '启用规则' : '禁用规则',
-                回调: async (): Promise<void> => {
-                  规则.已禁用 = 规则.已禁用 !== true
-                  重新计算规则()
-                },
-              },
-              '分隔符',
-              {
-                文本: '编辑规则',
-                回调: async (): Promise<void> => {
-                  await 打开规则编辑模态框(规则, (修改后的规则) => {
-                    当前规则列表[index] = 修改后的规则
-                    重新计算规则()
-                  })
-                },
-              },
-              {
-                文本: '删除规则',
-                回调: async (): Promise<void> => {
-                  当前规则列表.splice(index, 1)
-                  重新计算规则()
-                },
-              },
-            ])
-          }
-
-          let 顶部行 = 创建元素('div', {
-            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
-          })
-
-          let 标签容器 = 创建元素('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', flex: '1' } })
-
-          if (标签列表.length === 0) {
-            标签容器.append(
-              创建元素('span', {
-                textContent: '全选',
-                style: {
-                  fontSize: '11px',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  backgroundColor: '#333',
-                  color: '#aaa',
-                },
-              }),
-            )
-          } else {
-            标签列表.forEach((text) => {
-              标签容器.append(
-                创建元素('span', {
-                  textContent: text,
-                  style: {
-                    fontSize: '11px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(129, 140, 248, 0.15)',
-                    color: '#818cf8',
-                    border: '1px solid rgba(129, 140, 248, 0.2)',
-                  },
-                }),
-              )
-            })
-          }
-
-          let 操作组 = 创建元素('div', { style: { display: 'flex', gap: '4px' } })
-          let 创建操作按钮 = (icon: string, color: string, onclick: () => void): HTMLButtonElement => {
-            let btn = 创建元素('button', {
-              textContent: icon,
-              style: {
-                background: 'none',
-                border: 'none',
-                color: color,
-                cursor: 'pointer',
-                fontSize: '14px',
-                padding: '4px',
-                borderRadius: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background 0.2s',
-              },
-            })
-            btn.onmouseenter = (): void => {
-              btn.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-            }
-            btn.onmouseleave = (): void => {
-              btn.style.backgroundColor = 'transparent'
-            }
-            btn.onclick = onclick
-            return btn
-          }
-
-          操作组.append(
-            创建操作按钮('↑', '#fff', () => {
-              if (index > 0) {
-                let temp = 当前规则列表[index]
-                if (temp === undefined) throw new Error('意外的空值')
-                let prev = 当前规则列表[index - 1]
-                if (prev === undefined) throw new Error('意外的空值')
-                当前规则列表[index] = prev
-                当前规则列表[index - 1] = temp
-                重新计算规则()
-              }
-            }),
-            创建操作按钮('↓', '#fff', () => {
-              if (index < 当前规则列表.length - 1) {
-                let temp = 当前规则列表[index]
-                if (temp === undefined) throw new Error('意外的空值')
-                let next = 当前规则列表[index + 1]
-                if (next === undefined) throw new Error('意外的空值')
-                当前规则列表[index] = next
-                当前规则列表[index + 1] = temp
-                重新计算规则()
-              }
-            }),
-            创建操作按钮('✎', '#60a5fa', async () => {
-              await 打开规则编辑模态框(规则, (修改后的规则) => {
-                当前规则列表[index] = 修改后的规则
-                重新计算规则()
-              })
-            }),
-            创建操作按钮('✕', '#ef4444', () => {
-              当前规则列表.splice(index, 1)
-              重新计算规则()
-            }),
-          )
-
-          顶部行.append(标签容器, 操作组)
-
-          let 描述行 = 创建元素('div', {
-            textContent: 描述,
-            style: { color: '#9ca3af', fontSize: '12px', fontWeight: '500' },
-          })
-
-          规则项.append(顶部行, 描述行)
-          规则列表容器.append(规则项)
-        })
+        混音器包装.style.display = 'none'
       }
     }
 
-    let 重新计算规则 = (): void => {
-      当前排除片段 = []
-      let 时长 = this.预览组件?.获取视频时长() ?? 0
-      let 峰值 = this.时间轴组件?.获取峰值数据()
+    撤销按钮.onclick = (): void => {
+      this.执行撤销()
+    }
 
-      if (时长 <= 0 || 峰值 === null || 峰值 === undefined || 当前规则列表.length === 0) {
-        this.预览组件?.设置排除片段([])
-        this.时间轴组件?.设置排除片段([])
-        渲染规则列表()
+    重做按钮.onclick = (): void => {
+      this.执行重做()
+    }
+
+    选择屏幕按钮.onclick = async (): Promise<void> => {
+      try {
+        let stream: MediaStream
+        if (window.electronAPI?.获取屏幕列表 !== undefined) {
+          // Electron 环境
+          let 屏幕ID = await this.弹出屏幕选择()
+          if (屏幕ID === null || 屏幕ID === '') return
+
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 屏幕ID },
+            } as unknown as MediaTrackConstraints,
+          })
+        } else {
+          // Web 环境
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        }
+
+        // 获得麦克风 (简单起见先直接获取)
+        try {
+          let micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          micStream.getAudioTracks().forEach((track) => stream.addTrack(track))
+        } catch (e) {
+          console.warn('获取麦克风失败或未授权', e)
+        }
+
+        this.当前媒体流 = stream
+        选择屏幕按钮.textContent = '✅ 已选择屏幕'
+        选择屏幕按钮.style.backgroundColor = '#059669'
+      } catch (err) {
+        console.error('获取屏幕失败', err)
+      }
+    }
+
+    录制按钮.onclick = (): void => {
+      // 如果正在录制，则停止
+      if (this.录制器 !== null && this.录制器.state === 'recording') {
+        this.录制器.stop()
+        录制按钮.textContent = '🔴 开始录制'
+        录制按钮.style.backgroundColor = '#dc2626'
+        录制按钮.style.animation = 'none'
         return
       }
 
-      let 样本率 = 100 // 当前后端使用100个采样点每秒
-      当前排除片段 = 计算排除片段(时长, 峰值, 样本率, 当前规则列表)
-
-      this.预览组件?.设置排除片段(当前排除片段)
-      this.时间轴组件?.设置排除片段(当前排除片段)
-      渲染规则列表()
-    }
-
-    // 打开规则编辑模态框已提取到外部
-
-    添加静音规则按钮.onclick = async (): Promise<void> => {
-      await 打开规则编辑模态框(undefined, (新规则) => {
-        当前规则列表.push(新规则)
-        重新计算规则()
-      })
-    }
-
-    渲染规则列表()
-
-    容器.append(左侧主内容, 右侧规则面板)
-    this.shadow.append(容器)
-
-    // 拖拽事件
-    容器.ondragover = (e: DragEvent): void => {
-      e.preventDefault()
-      拖拽提示.style.borderColor = '#4f46e5'
-      拖拽提示.style.color = '#4f46e5'
-      拖拽提示.style.backgroundColor = 'rgba(79, 70, 229, 0.05)'
-    }
-
-    容器.ondragleave = (): void => {
-      拖拽提示.style.borderColor = '#333'
-      拖拽提示.style.color = '#666'
-      拖拽提示.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'
-    }
-
-    容器.ondrop = async (e: DragEvent): Promise<void> => {
-      e.preventDefault()
-      let 文件 = e.dataTransfer?.files[0]
-      if (文件 === undefined) throw new Error('意外的空值')
-      if (文件.type.startsWith('video/')) {
-        let url = URL.createObjectURL(文件)
-        let 真实路径 = window.electronAPI.获取文件路径(文件)
-        if (this.预览组件 !== null && this.预览组件.parentElement === null) {
-          拖拽提示.remove()
-          预览容器.append(this.预览组件)
-        }
-        this.预览组件?.设置视频源(url)
-        await this.时间轴组件?.设置资源(url, 文件.name, 真实路径)
-        重新计算规则()
+      // 如果未录制，则开始
+      if (this.当前媒体流 === null) {
+        alert('请先选择屏幕！')
+        return
       }
+
+      this.保存历史()
+
+      this.录制的数据块 = []
+
+      // 穿插录制：获取当前时间轴的位置
+      let 穿插起点时间 = this.时间轴组件?.获取当前时间() ?? 0
+
+      // 截断波形或用0填充
+      let 保留的波形长度 = Math.floor(穿插起点时间 * 100)
+      if (this.实时波形数据.length > 保留的波形长度) {
+        this.实时波形数据 = this.实时波形数据.slice(0, 保留的波形长度)
+      } else {
+        while (this.实时波形数据.length < 保留的波形长度) {
+          this.实时波形数据.push(0)
+        }
+      }
+
+      this.录制器 = new MediaRecorder(this.当前媒体流, { mimeType: 'video/webm' })
+
+      // 设置音频分析
+      this.音频上下文 = new AudioContext()
+      let source = this.音频上下文.createMediaStreamSource(this.当前媒体流)
+      let 分析器 = this.音频上下文.createAnalyser()
+      分析器.fftSize = 512
+      source.connect(分析器)
+
+      let 频率数据 = new Uint8Array(分析器.frequencyBinCount)
+      this.录制开始时间 = performance.now()
+
+      let 记录波形循环 = (): void => {
+        if (this.录制器 !== null && this.录制器.state === 'recording') {
+          let 本次录制经过时间 = (performance.now() - this.录制开始时间) / 1000
+          let 当前绝对时间 = 穿插起点时间 + 本次录制经过时间
+
+          // 使用时域数据计算均方根(RMS)来获得真实的音量感知
+          分析器.getByteTimeDomainData(频率数据)
+          let sumSquares = 0.0
+          for (let i = 0; i < 频率数据.length; i++) {
+            let normalized = ((频率数据[i] ?? 128) - 128) / 128
+            sumSquares += normalized * normalized
+          }
+          let rms = Math.sqrt(sumSquares / 频率数据.length)
+          // 放大一点并稍微做个非线性以便于视觉观察
+          let val = Math.min(1.0, rms * 6)
+
+          // 假设采样率是 100
+          let 目标长度 = Math.floor(当前绝对时间 * 100)
+          while (this.实时波形数据.length < 目标长度) {
+            this.实时波形数据.push(val)
+          }
+
+          // false: 录制时不要重置缩放
+          this.时间轴组件?.设置峰值数据(this.实时波形数据, 100, false)
+          this.时间轴组件?.同步进度(当前绝对时间)
+
+          this.录制循环ID = requestAnimationFrame(记录波形循环)
+        }
+      }
+
+      this.录制器.ondataavailable = (e): void => {
+        if (e.data.size > 0) this.录制的数据块.push(e.data)
+      }
+
+      this.录制器.onstop = (): void => {
+        if (this.录制循环ID !== null) cancelAnimationFrame(this.录制循环ID)
+        if (this.音频上下文 !== null) {
+          void this.音频上下文.close()
+          this.音频上下文 = null
+        }
+
+        let blob = new Blob(this.录制的数据块, { type: 'video/webm' })
+        let url = URL.createObjectURL(blob)
+
+        let 录制结束时间 = this.实时波形数据.length / 100
+
+        let 新片段: 视频片段 = { url: url, start: 穿插起点时间, duration: 录制结束时间 - 穿插起点时间 }
+
+        let 新切片列表: 视频片段[] = []
+        for (let 片段 of this.切片列表) {
+          if (片段.start >= 穿插起点时间) {
+            continue
+          } else if (片段.start + 片段.duration > 穿插起点时间) {
+            新切片列表.push({ url: 片段.url, start: 片段.start, duration: 穿插起点时间 - 片段.start })
+          } else {
+            新切片列表.push(片段)
+          }
+        }
+        新切片列表.push(新片段)
+        this.切片列表 = 新切片列表
+
+        this.预览组件?.设置播放列表(this.切片列表)
+
+        this.时间轴组件?.设置峰值数据(this.实时波形数据, 100, false)
+
+        setTimeout(() => {
+          this.时间轴组件?.同步进度(录制结束时间)
+          this.预览组件?.跳转(录制结束时间)
+        }, 50)
+      }
+
+      this.录制器.start(100) // 100ms 吐一次切片
+      this.录制循环ID = requestAnimationFrame(记录波形循环)
+
+      录制按钮.textContent = '⏹ 停止录制'
+      录制按钮.style.backgroundColor = '#4b5563'
+      录制按钮.style.animation = 'pulse 1.5s infinite'
     }
 
     // 事件联动
-    this.预览组件.监听发出事件('进度变化', async (e) => {
+    this.预览组件.监听发出事件('进度变化', async (e): Promise<void> => {
       this.时间轴组件?.同步进度(e.detail)
     })
 
-    this.时间轴组件.监听发出事件('进度跳转', async (e) => {
+    this.时间轴组件.监听发出事件('进度跳转', async (e): Promise<void> => {
       this.预览组件?.跳转(e.detail)
     })
   }
