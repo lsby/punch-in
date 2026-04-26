@@ -13,6 +13,7 @@ export type 时间轴UI元素 = {
   预览窗: HTMLElement
   预览画布: HTMLCanvasElement
   预览时间标签: HTMLElement
+  预览分贝标签: HTMLElement
 }
 
 export function 构建时间轴UI(shadow: ShadowRoot): 时间轴UI元素 {
@@ -186,7 +187,7 @@ export function 构建时间轴UI(shadow: ShadowRoot): 时间轴UI元素 {
   let 预览窗 = 创建元素('div', {
     style: {
       position: 'absolute',
-      bottom: 'calc(100% + 12px)',
+      bottom: 'calc(100% + 16px)',
       left: '0',
       display: 'none',
       flexDirection: 'column',
@@ -194,44 +195,77 @@ export function 构建时间轴UI(shadow: ShadowRoot): 时间轴UI元素 {
       pointerEvents: 'none',
       zIndex: '1000',
       transform: 'translateX(-50%)',
+      transition: 'opacity 0.2s, transform 0.2s',
+      filter: 'drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5))',
     },
   })
 
   let 预览框 = 创建元素('div', {
     style: {
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      borderRadius: '10px',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
+      borderRadius: '12px',
       overflow: 'hidden',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-      backgroundColor: 'rgba(0, 0, 0, 0.8)',
-      backdropFilter: 'blur(12px)',
+      backgroundColor: 'rgba(20, 23, 28, 0.8)',
+      backdropFilter: 'blur(16px)',
       position: 'relative',
-      width: '160px',
-      height: '90px',
+      width: '180px',
+      height: '101px', // 16:9
+      display: 'flex',
+      flexDirection: 'column',
     },
   })
 
   let 预览画布 = 创建元素('canvas', {
-    width: 160,
-    height: 90,
-    style: { width: '100%', height: '100%', display: 'block' },
+    width: 180,
+    height: 101,
+    style: { width: '100%', height: '100%', display: 'block', backgroundColor: '#000' },
+  })
+
+  let 预览标签容器 = 创建元素('div', {
+    style: {
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      padding: '8px',
+      background:
+        'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.6) 100%)',
+      pointerEvents: 'none',
+    },
+  })
+
+  let 预览分贝标签 = 创建元素('div', {
+    style: {
+      alignSelf: 'center',
+      backgroundColor: 'rgba(79, 70, 229, 0.85)',
+      color: '#fff',
+      padding: '3px 8px',
+      borderRadius: '6px',
+      fontSize: '11px',
+      fontWeight: '600',
+      fontFamily: "'JetBrains Mono', monospace",
+      letterSpacing: '0.2px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+      border: '1px solid rgba(255, 255, 255, 0.1)',
+    },
   })
 
   let 预览时间标签 = 创建元素('div', {
     style: {
-      position: 'absolute',
-      bottom: '6px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      backdropFilter: 'blur(4px)',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
+      alignSelf: 'center',
+      backgroundColor: 'rgba(15, 17, 21, 0.85)',
       color: '#fff',
-      padding: '4px 10px',
+      padding: '3px 10px',
       borderRadius: '20px',
-      fontSize: '11px',
-      fontWeight: 'bold',
+      fontSize: '12px',
+      fontWeight: '700',
+      fontFamily: "'JetBrains Mono', monospace",
       letterSpacing: '0.5px',
+      border: '1px solid rgba(255, 255, 255, 0.1)',
     },
   })
 
@@ -239,13 +273,16 @@ export function 构建时间轴UI(shadow: ShadowRoot): 时间轴UI元素 {
     style: {
       width: '0',
       height: '0',
-      borderLeft: '6px solid transparent',
-      borderRight: '6px solid transparent',
-      borderTop: '6px solid #fff',
+      borderLeft: '8px solid transparent',
+      borderRight: '8px solid transparent',
+      borderTop: '8px solid rgba(20, 23, 28, 0.8)',
+      marginTop: '-1px',
+      filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.2))',
     },
   })
 
-  预览框.append(预览画布, 预览时间标签)
+  预览标签容器.append(预览分贝标签, 预览时间标签)
+  预览框.append(预览画布, 预览标签容器)
   预览窗.append(预览框, 预览箭头)
 
   容器.append(轨道容器, 波形加载遮罩, 预览窗)
@@ -264,5 +301,6 @@ export function 构建时间轴UI(shadow: ShadowRoot): 时间轴UI元素 {
     预览窗,
     预览画布,
     预览时间标签,
+    预览分贝标签,
   }
 }

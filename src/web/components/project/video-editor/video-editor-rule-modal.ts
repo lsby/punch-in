@@ -173,13 +173,22 @@ export async function 打开规则编辑模态框(
   微调容器.append(创建元素('span', { textContent: '缓冲区域:', style: { fontWeight: '500' } }))
   let 微调内容 = 创建元素('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } })
   let 微调符号 = 创建元素('select', { style: { ...输入项样式, flex: '1' } })
-  微调符号.innerHTML = '<option value="内缩">内缩</option><option value="外扩">外扩</option>'
+  微调符号.innerHTML =
+    '<option value="内缩">内缩</option><option value="外扩">外扩</option><option value="不处理">不处理</option>'
   if (已有规则 !== undefined) 微调符号.value = 已有规则.二次处理.区域微调.类型
   let 微调值 = 创建元素('input', {
     type: 'number',
     value: 已有规则 !== undefined ? 已有规则.二次处理.区域微调.值.toString() : '0.5',
     style: { ...输入项样式, width: '60px' },
   })
+
+  let 更新微调状态 = (): void => {
+    微调值.disabled = 微调符号.value === '不处理'
+    微调值.style.opacity = 微调符号.value === '不处理' ? '0.5' : '1'
+  }
+  微调符号.onchange = (): void => 更新微调状态()
+  更新微调状态()
+
   微调内容.append(微调符号, 微调值, 创建元素('span', { textContent: '秒' }))
   微调容器.append(微调内容)
 
@@ -261,7 +270,7 @@ export async function 打开规则编辑模态框(
         },
       },
       二次处理: {
-        区域微调: { 类型: 微调符号.value as '外扩' | '内缩', 值: parseFloat(微调值.value) },
+        区域微调: { 类型: 微调符号.value as '外扩' | '内缩' | '不处理', 值: parseFloat(微调值.value) },
         强制过滤时长: parseFloat(过滤值.value),
       },
       行为: 行为符号.value.includes('去除') ? '去除' : '保留',

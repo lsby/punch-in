@@ -1,3 +1,7 @@
+* {
+  box-sizing: border-box;
+}
+
 :root {
   --背景颜色: white;
   --文字颜色: black;

@@ -47,6 +47,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         minWidth: '0',
         minHeight: '0',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       },
     })
 
@@ -69,11 +70,19 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         fontSize: '18px',
         transition: 'all 0.3s',
         backgroundColor: 'rgba(255, 255, 255, 0.02)',
+        boxSizing: 'border-box',
       },
     })
 
     let 预览容器 = 创建元素('div', {
-      style: { flex: '1', position: 'relative', minHeight: '0', display: 'flex', flexDirection: 'column' },
+      style: {
+        flex: '1',
+        position: 'relative',
+        minHeight: '0',
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
+      },
     })
     预览容器.append(拖拽提示)
 
@@ -90,6 +99,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         padding: '20px',
         gap: '16px',
         border: '1px solid #333',
+        boxSizing: 'border-box',
       },
     })
 
@@ -354,7 +364,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     容器.ondragleave = (): void => {
       拖拽提示.style.borderColor = '#333'
       拖拽提示.style.color = '#666'
-      拖拽提示.style.backgroundColor = 'transparent'
+      拖拽提示.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'
     }
 
     容器.ondrop = async (e: DragEvent): Promise<void> => {

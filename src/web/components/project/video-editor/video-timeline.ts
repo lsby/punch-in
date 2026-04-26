@@ -20,6 +20,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 波形画布: HTMLCanvasElement | null = null
   private 播放头元素: HTMLElement | null = null
   private 波形加载遮罩: HTMLElement | null = null
+  private 预览分贝标签: HTMLElement | null = null
 
   private 默认缩放: number = 100
   private 当前缩放: number = this.默认缩放
@@ -28,6 +29,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 真实时长: number = 0
   private 当前时间: number = 0
   private 排除片段列表: { start: number; end: number }[] = []
+  private 全局最大峰值: number = 0
 
   private 预览视频: HTMLVideoElement | null = null
   private 预览窗: HTMLElement | null = null
@@ -54,6 +56,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     this.预览窗 = UI.预览窗
     this.预览画布 = UI.预览画布
     this.预览时间标签 = UI.预览时间标签
+    this.预览分贝标签 = UI.预览分贝标签
 
     this.轨道容器.onmouseenter = (): void => {
       if (this.预览视频 !== null && this.预览窗 !== null) this.预览窗.style.display = 'flex'
@@ -88,6 +91,24 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       this.预览窗.style.left = `${e.clientX - 容器矩形.left}px`
 
       if (this.预览时间标签 !== null) this.预览时间标签.textContent = 格式化时间(时间)
+
+      if (this.预览分贝标签 !== null && this.峰值数据 !== null && this.全局最大峰值 > 0) {
+        let 窗口大小 = 0.1 // 100ms 窗口
+        let 半窗口点数 = Math.floor((窗口大小 * 100) / 2)
+        let 中心索引 = Math.floor(时间 * 100)
+        let 起始索引 = Math.max(0, 中心索引 - 半窗口点数)
+        let 结束索引 = Math.min(this.峰值数据.length, 中心索引 + 半窗口点数)
+
+        let 窗口最大 = 0
+        for (let i = 起始索引; i < 结束索引; i++) {
+          let p = this.峰值数据[i] ?? 0
+          if (p > 窗口最大) 窗口最大 = p
+        }
+
+        let 相对百分比 = (窗口最大 / this.全局最大峰值) * 100
+        let 强度 = 窗口最大 > 0 ? Math.max(0, 100 + 20 * Math.log10(窗口最大 / this.全局最大峰值)) : 0
+        this.预览分贝标签.textContent = `${相对百分比.toFixed(1)}% / ${强度.toFixed(1)} dB`
+      }
 
       if (!this.是否正在寻求预览) {
         this.是否正在寻求预览 = true
@@ -310,6 +331,10 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
           })
           this.峰值数据 = 结果.peaks
           this.真实时长 = this.峰值数据.length / 100
+          this.全局最大峰值 = 0
+          for (let p of this.峰值数据) {
+            if (p > this.全局最大峰值) this.全局最大峰值 = p
+          }
         } catch (e) {
           console.error('获取峰值数据失败:', e)
         }
@@ -333,7 +358,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
         if (this.预览画布 !== null && this.预览视频 !== null) {
           let 上下文 = this.预览画布.getContext('2d')
           if (上下文 !== null) {
-            上下文.drawImage(this.预览视频, 0, 0, 160, 90)
+            上下文.drawImage(this.预览视频, 0, 0, 180, 101)
           }
         }
         this.是否正在寻求预览 = false
