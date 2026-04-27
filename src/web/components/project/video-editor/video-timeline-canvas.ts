@@ -17,6 +17,10 @@ export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): v
   let height = 画布.height
   ctx.clearRect(0, 0, width, height)
 
+  // 绘制中心基准线
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'
+  ctx.fillRect(0, height / 2, width, 1 * dpr)
+
   if (峰值数据 === null || 真实时长 <= 0) return
 
   // 渐变色波形
@@ -24,9 +28,6 @@ export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): v
   gradient.addColorStop(0, '#818cf8')
   gradient.addColorStop(1, '#4f46e5')
   ctx.fillStyle = gradient
-
-  // 中心线
-  ctx.fillRect(0, height / 2, width, 1 * dpr)
 
   let 点数 = 峰值数据.length
   let 每秒点数 = 100
@@ -62,14 +63,12 @@ export function 绘制波形(画布: HTMLCanvasElement, 参数: 渲染参数): v
 }
 
 export function 绘制刻度尺(画布: HTMLCanvasElement, 参数: 渲染参数): void {
-  let { 当前缩放, 真实时长, 滚动距离, 视口宽度, 像素比: dpr } = 参数
+  let { 当前缩放, 滚动距离, 视口宽度, 像素比: dpr } = 参数
   let ctx = 画布.getContext('2d')
   if (ctx === null) return
   let width = 画布.width
   let height = 画布.height
   ctx.clearRect(0, 0, width, height)
-
-  if (真实时长 <= 0) return
 
   let 开始时间 = 滚动距离 / 当前缩放
   let 结束时间 = (滚动距离 + 视口宽度) / 当前缩放

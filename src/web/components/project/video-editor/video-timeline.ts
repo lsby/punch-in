@@ -178,7 +178,6 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
     this.轨道容器.onwheel = (e: WheelEvent): void => {
       e.preventDefault()
-      if (this.真实时长 <= 0) return
 
       if (e.ctrlKey || e.metaKey || e.deltaY !== 0) {
         let 缩放因子 = e.deltaY > 0 ? 0.9 : 1.1
@@ -200,12 +199,18 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       this.触发重绘()
     }
 
+    this.轨道容器.oncontextmenu = (e: MouseEvent): void => {
+      e.preventDefault()
+    }
+
     this.观察器 = new ResizeObserver((): void => {
       this.调整画布尺寸()
     })
     this.观察器.observe(this.轨道容器)
-
     window.addEventListener('resize', this.调整画布尺寸.bind(this))
+
+    // 立即触发一次重绘，确保初始化时可见
+    this.调整画布尺寸()
   }
 
   protected override async 当卸载时(): Promise<void> {
@@ -239,7 +244,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
   private 触发重绘(): void {
     if (this.动画请求 !== null) {
-      cancelAnimationFrame(this.动画请求)
+      return
     }
     this.动画请求 = requestAnimationFrame((): void => {
       this.动画请求 = null
@@ -294,7 +299,8 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     let 旧缩放 = this.当前缩放
     this.当前缩放 = 实际缩放
 
-    let 总宽度 = Math.max(0, this.真实时长) * 实际缩放
+    let 额外宽度 = this.轨道容器?.clientWidth ?? 0
+    let 总宽度 = Math.max(0, this.真实时长) * 实际缩放 + 额外宽度
     if (this.内容层 !== null) this.内容层.style.width = `${总宽度}px`
     if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
 
@@ -309,7 +315,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
     this.当前缩放 = 实际缩放
 
-    总宽度 = this.真实时长 * 实际缩放
+    总宽度 = this.真实时长 * 实际缩放 + 额外宽度
     if (this.内容层 !== null) this.内容层.style.width = `${总宽度}px`
     if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
 
