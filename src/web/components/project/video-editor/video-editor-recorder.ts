@@ -55,6 +55,9 @@ export class 视频录制器 {
       if (this.录制器 === null) return
 
       if (this.录制器.state === 'recording') {
+        if (this.录制开始时间 === 0) {
+          this.录制开始时间 = performance.now()
+        }
         let 本次录制经过时间 = (performance.now() - this.录制开始时间) / 1000
         let 当前绝对时间 = 穿插起点时间 + 本次录制经过时间
 
@@ -76,10 +79,10 @@ export class 视频录制器 {
       if (e.data.size > 0) this.录制的数据块.push(e.data)
     }
 
-    this.录制器.onstop = (): void => {
+    this.录制器.onstop = async (): Promise<void> => {
       if (this.录制循环ID !== null) cancelAnimationFrame(this.录制循环ID)
 
-      let 编码结果 = this.导出器.停止录制()
+      let 编码结果 = await this.导出器.停止录制()
 
       let blob = new Blob(this.录制的数据块, { type: 'video/webm' })
       let url = URL.createObjectURL(blob)
@@ -108,21 +111,16 @@ export class 视频录制器 {
       回调.录制完成(this.切片列表, this.实时波形数据, 录制结束时间)
     }
 
-    // 等待录制器真正启动后再设置开始时间，确保时间基准准确
-    this.录制器.onstart = (): void => {
-      this.录制开始时间 = performance.now()
-    }
-
+    this.录制开始时间 = 0
     this.录制器.start(100)
-    this.录制开始时间 = performance.now()
     this.录制循环ID = requestAnimationFrame(记录波形循环)
   }
 
-  public async 导出MP4(): Promise<void> {
+  public async 导出MP4(配置: any): Promise<void> {
     if (this.切片列表.length === 0) {
       alert('没有可以导出的片段')
       return
     }
-    await this.导出器.导出MP4(this.切片列表)
+    await this.导出器.导出MP4(this.切片列表, 配置)
   }
 }
