@@ -8,6 +8,17 @@ export interface 视频片段 {
   url: string
   start: number
   duration: number
+  videoChunks?: { type: 'key' | 'delta'; timestamp: number; duration: number; data: Uint8Array }[]
+  audioChunks?: { type: 'key' | 'delta'; timestamp: number; duration: number; data: Uint8Array }[]
+  videoConfig?: {
+    codec: string
+    width: number
+    height: number
+    displayWidth?: number
+    displayHeight?: number
+    description?: Uint8Array
+  }
+  audioConfig?: { codec: string; sampleRate: number; numberOfChannels: number; description?: Uint8Array }
 }
 
 export class 视频预览组件 extends 组件基类<发出事件类型, 监听事件类型> {

@@ -2,6 +2,7 @@ import { 组件基类 } from '../../base/base'
 import { 关闭模态框, 显示模态框 } from '../../global/manager/modal-manager'
 import { 创建元素 } from '../../global/tools/create-element'
 import { 视频混音器组件 } from './video-editor/video-audio-mixer'
+import { 视频导出器 } from './video-editor/video-exporter'
 import { 视频片段, 视频预览组件 } from './video-editor/video-preview'
 import { 视频时间轴组件 } from './video-editor/video-timeline'
 
@@ -16,6 +17,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
   private 预览组件: 视频预览组件 | null = null
   private 时间轴组件: 视频时间轴组件 | null = null
   private 混音器组件: 视频混音器组件 | null = null
+  private 导出器 = new 视频导出器()
 
   private 当前媒体流: MediaStream | null = null
   private 录制器: MediaRecorder | null = null
@@ -303,7 +305,30 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       切换混音器按钮.style.borderColor = '#444c56'
     }
 
-    顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮)
+    let 导出按钮 = 创建元素('button', {
+      textContent: '💾 导出 MP4',
+      style: {
+        padding: '8px 16px',
+        backgroundColor: '#2563eb',
+        color: '#fff',
+        border: '1px solid #3b82f6',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        outline: 'none',
+        transition: 'all 0.2s',
+      },
+    })
+    导出按钮.onmouseenter = (): void => {
+      导出按钮.style.backgroundColor = '#1d4ed8'
+      导出按钮.style.borderColor = '#2563eb'
+    }
+    导出按钮.onmouseleave = (): void => {
+      导出按钮.style.backgroundColor = '#2563eb'
+      导出按钮.style.borderColor = '#3b82f6'
+    }
+
+    顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮, 导出按钮)
 
     // 预览区域
     let 预览容器 = 创建元素('div', {
@@ -349,6 +374,23 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         混音器包装.style.display = 'block'
       } else {
         混音器包装.style.display = 'none'
+      }
+    }
+
+    导出按钮.onclick = async (): Promise<void> => {
+      if (this.切片列表.length === 0) {
+        alert('没有可以导出的片段')
+        return
+      }
+      导出按钮.textContent = '⏳ 正在导出...'
+      try {
+        await this.导出器.导出MP4(this.切片列表)
+        alert('导出成功！')
+      } catch (e) {
+        console.error(e)
+        alert('导出失败: ' + String(e))
+      } finally {
+        导出按钮.textContent = '💾 导出 MP4'
       }
     }
 
@@ -432,6 +474,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
       this.录制器 = new MediaRecorder(this.当前媒体流, { mimeType: 'video/webm' })
 
+      // WebCodecs 实时编码准备
+      void this.导出器.开始录制(this.当前媒体流)
+
       // 设置音频分析
       this.音频上下文 = new AudioContext()
       let source = this.音频上下文.createMediaStreamSource(this.当前媒体流)
@@ -483,19 +528,25 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           this.音频上下文 = null
         }
 
+        let 编码结果 = this.导出器.停止录制()
+
         let blob = new Blob(this.录制的数据块, { type: 'video/webm' })
         let url = URL.createObjectURL(blob)
 
         let 录制结束时间 = this.实时波形数据.length / 100
 
         let 新片段: 视频片段 = { url: url, start: 穿插起点时间, duration: 录制结束时间 - 穿插起点时间 }
+        if (编码结果.videoChunks !== undefined) 新片段.videoChunks = 编码结果.videoChunks
+        if (编码结果.audioChunks !== undefined) 新片段.audioChunks = 编码结果.audioChunks
+        if (编码结果.videoConfig !== undefined) 新片段.videoConfig = 编码结果.videoConfig
+        if (编码结果.audioConfig !== undefined) 新片段.audioConfig = 编码结果.audioConfig
 
         let 新切片列表: 视频片段[] = []
         for (let 片段 of this.切片列表) {
           if (片段.start >= 穿插起点时间) {
             continue
           } else if (片段.start + 片段.duration > 穿插起点时间) {
-            新切片列表.push({ url: 片段.url, start: 片段.start, duration: 穿插起点时间 - 片段.start })
+            新切片列表.push({ ...片段, duration: 穿插起点时间 - 片段.start })
           } else {
             新切片列表.push(片段)
           }
