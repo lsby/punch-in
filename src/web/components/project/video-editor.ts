@@ -2,6 +2,7 @@ import { 组件基类 } from '../../base/base'
 import { 主要按钮, 文本按钮 } from '../../components/general/base/base-button'
 import { 普通输入框 } from '../../components/general/form/form-input'
 import { 单选框组 } from '../../components/general/form/form-radio-group'
+import { 切换开关 } from '../../components/general/form/form-switch'
 import { 关闭模态框, 显示模态框 } from '../../global/manager/modal-manager'
 import { 创建元素 } from '../../global/tools/create-element'
 import { 视频混音器组件 } from './video-editor/video-audio-mixer'
@@ -39,22 +40,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
     return new Promise(async (resolve) => {
       let 屏幕列表 = await api.获取屏幕列表()
-      let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' } })
+      let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } })
 
-      let 顶部栏 = 创建元素('div', {
-        style: { display: 'flex', justifyContent: 'flex-end', padding: '0 20px', alignItems: 'center', gap: '8px' },
-      })
-
-      let 录制音频勾选框 = 创建元素('input', { type: 'checkbox' })
-      录制音频勾选框.checked = true
-      let 录制音频标签 = 创建元素('label', {
-        textContent: '录制系统音频',
-        style: { color: '#fff', fontSize: '14px', cursor: 'pointer' },
-      })
-      录制音频标签.onclick = (): void => {
-        录制音频勾选框.checked = !录制音频勾选框.checked
-      }
-      顶部栏.append(录制音频勾选框, 录制音频标签)
+      let 录制音频开关 = new 切换开关({ 标签: '录制系统音频', 值: true })
 
       let 内容容器 = 创建元素('div', {
         style: {
@@ -67,7 +55,21 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           flex: '1',
         },
       })
-      容器.append(顶部栏, 内容容器)
+
+      let 底部栏 = 创建元素('div', {
+        style: {
+          display: 'flex',
+          justifyContent: 'flex-end',
+          padding: '16px 24px',
+          alignItems: 'center',
+          backgroundColor: '#1f2937',
+          borderTop: '1px solid #374151',
+          boxShadow: '0 -4px 12px rgba(0,0,0,0.2)',
+        },
+      })
+      底部栏.append(录制音频开关)
+
+      容器.append(内容容器, 底部栏)
 
       屏幕列表.forEach((屏幕) => {
         let 卡片 = 创建元素('div', {
@@ -88,7 +90,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           卡片.style.borderColor = 'transparent'
         }
         卡片.onclick = async (): Promise<void> => {
-          resolve(录制音频勾选框.checked ? `audio:${屏幕.id}` : 屏幕.id)
+          resolve(录制音频开关.获得值() ? `audio:${屏幕.id}` : 屏幕.id)
           await 关闭模态框()
         }
 
@@ -278,6 +280,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
 
     按钮集.选择屏幕按钮.onclick = async (): Promise<void> => {
+      if (this.当前媒体流 !== null) return
       try {
         let stream: MediaStream
         if (window.electronAPI?.获取屏幕列表 !== undefined) {
@@ -308,6 +311,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         this.当前媒体流 = stream
         按钮集.选择屏幕按钮.textContent = '✅ 已选择屏幕'
         按钮集.选择屏幕按钮.style.backgroundColor = '#059669'
+        按钮集.选择屏幕按钮.style.cursor = 'not-allowed'
 
         // 启动混音器监听
         this.音频分析器.启动(stream)
