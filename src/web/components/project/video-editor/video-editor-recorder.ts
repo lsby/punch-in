@@ -50,10 +50,11 @@ export class 视频录制器 {
     // WebCodecs 实时编码准备
     void this.导出器.开始录制(媒体流)
 
-    this.录制开始时间 = performance.now()
-
     let 记录波形循环 = (): void => {
-      if (this.录制器 !== null && this.录制器.state === 'recording') {
+      // 只要录制器存在就继续循环，不依赖 state 判断（避免因 state 尚未切换导致循环提前终止）
+      if (this.录制器 === null) return
+
+      if (this.录制器.state === 'recording') {
         let 本次录制经过时间 = (performance.now() - this.录制开始时间) / 1000
         let 当前绝对时间 = 穿插起点时间 + 本次录制经过时间
 
@@ -65,9 +66,9 @@ export class 视频录制器 {
         }
 
         回调.同步时间轴(this.实时波形数据, 100, 当前绝对时间)
-
-        this.录制循环ID = requestAnimationFrame(记录波形循环)
       }
+
+      this.录制循环ID = requestAnimationFrame(记录波形循环)
     }
 
     this.录制器.ondataavailable = (e): void => {
@@ -106,7 +107,13 @@ export class 视频录制器 {
       回调.录制完成(this.切片列表, this.实时波形数据, 录制结束时间)
     }
 
+    // 等待录制器真正启动后再设置开始时间，确保时间基准准确
+    this.录制器.onstart = (): void => {
+      this.录制开始时间 = performance.now()
+    }
+
     this.录制器.start(100)
+    this.录制开始时间 = performance.now()
     this.录制循环ID = requestAnimationFrame(记录波形循环)
   }
 

@@ -303,6 +303,8 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
 
   public 切换播放状态(): void {
     if (this.播放器 === null) return
+    if (this.播放列表.length === 0 && this.播放器.srcObject === null) return
+
     if (this.播放器.paused) {
       if (this.播放列表.length > 0) {
         let lastSegment = this.播放列表[this.播放列表.length - 1]
