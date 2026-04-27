@@ -101,36 +101,50 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
       if (this.预览时间标签 !== null) this.预览时间标签.textContent = 格式化时间(时间)
 
-      if (this.预览分贝标签 !== null && this.峰值数据 !== null && this.全局最大峰值 > 0) {
-        let 窗口大小 = 0.1 // 100ms 窗口
-        let 半窗口点数 = Math.floor((窗口大小 * 100) / 2)
-        let 中心索引 = Math.floor(时间 * 100)
-        let 起始索引 = Math.max(0, 中心索引 - 半窗口点数)
-        let 结束索引 = Math.min(this.峰值数据.length, 中心索引 + 半窗口点数)
+      let 目标片段 = this.播放列表.find((s) => 时间 >= s.start && 时间 < s.start + s.duration)
+      let 有内容 = 目标片段 !== undefined || (this.播放列表.length === 0 && this.预览视频.src !== '')
 
-        let 窗口最大 = 0
-        for (let i = 起始索引; i < 结束索引; i++) {
-          let p = this.峰值数据[i] ?? 0
-          if (p > 窗口最大) 窗口最大 = p
+      if (有内容) {
+        if (this.预览分贝标签 !== null && this.峰值数据 !== null && this.全局最大峰值 > 0) {
+          let 窗口大小 = 0.1 // 100ms 窗口
+          let 半窗口点数 = Math.floor((窗口大小 * 100) / 2)
+          let 中心索引 = Math.floor(时间 * 100)
+          let 起始索引 = Math.max(0, 中心索引 - 半窗口点数)
+          let 结束索引 = Math.min(this.峰值数据.length, 中心索引 + 半窗口点数)
+
+          let 窗口最大 = 0
+          for (let i = 起始索引; i < 结束索引; i++) {
+            let p = this.峰值数据[i] ?? 0
+            if (p > 窗口最大) 窗口最大 = p
+          }
+
+          let 相对百分比 = (窗口最大 / this.全局最大峰值) * 100
+          let 强度 = 窗口最大 > 0 ? Math.max(0, 100 + 20 * Math.log10(窗口最大 / this.全局最大峰值)) : 0
+          this.预览分贝标签.textContent = `${相对百分比.toFixed(1)}% / ${强度.toFixed(1)} dB`
         }
 
-        let 相对百分比 = (窗口最大 / this.全局最大峰值) * 100
-        let 强度 = 窗口最大 > 0 ? Math.max(0, 100 + 20 * Math.log10(窗口最大 / this.全局最大峰值)) : 0
-        this.预览分贝标签.textContent = `${相对百分比.toFixed(1)}% / ${强度.toFixed(1)} dB`
-      }
-
-      if (!this.是否正在寻求预览) {
-        let 目标片段 = this.播放列表.find((s) => 时间 >= s.start && 时间 < s.start + s.duration)
-        if (目标片段 !== undefined) {
-          this.是否正在寻求预览 = true
-          if (this.预览视频.src !== 目标片段.url) {
-            this.预览视频.src = 目标片段.url
+        if (!this.是否正在寻求预览) {
+          if (目标片段 !== undefined) {
+            this.是否正在寻求预览 = true
+            if (this.预览视频.src !== 目标片段.url) {
+              this.预览视频.src = 目标片段.url
+            }
+            this.预览视频.currentTime = 时间 - 目标片段.start
+          } else if (this.播放列表.length === 0 && this.预览视频.src !== '') {
+            this.是否正在寻求预览 = true
+            this.预览视频.currentTime = 时间
           }
-          this.预览视频.currentTime = 时间 - 目标片段.start
-        } else if (this.播放列表.length === 0 && this.预览视频.src !== '') {
-          // 如果没有播放列表但有 src (比如通过设置资源设置的)，则直接 seek
-          this.是否正在寻求预览 = true
-          this.预览视频.currentTime = 时间
+        }
+      } else {
+        if (this.预览画布 !== null) {
+          let 上下文 = this.预览画布.getContext('2d')
+          if (上下文 !== null) {
+            上下文.fillStyle = '#000'
+            上下文.fillRect(0, 0, this.预览画布.width, this.预览画布.height)
+          }
+        }
+        if (this.预览分贝标签 !== null) {
+          this.预览分贝标签.textContent = '0.0% / 0.0 dB'
         }
       }
     }
