@@ -1,15 +1,15 @@
 import { 视频混音器组件 } from './video-audio-mixer'
 
+type 分析数据 = { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer> }
+
 export class 视频音频分析器 {
   private 音频上下文: AudioContext | null = null
   private 混音器组件: 视频混音器组件 | null = null
   private 动画帧ID: number | null = null
 
-  // 累积峰值: 在帧间持续跟踪最大 RMS，避免 AnalyserNode 快照式采样遗漏瞬时音频
-  private 桌面累积峰值 = 0
-  private 麦克风累积峰值 = 0
-
-  public 当前总音量 = 0
+  // 持有 AnalyserNode 引用，供 即时计算音量() 直接拉取数据
+  private 桌面分析: 分析数据 | null = null
+  private 麦克风分析: 分析数据 | null = null
 
   public 设置混音器(混音器: 视频混音器组件 | null): void {
     this.混音器组件 = 混音器
@@ -32,7 +32,7 @@ export class 视频音频分析器 {
       void ctx.resume()
     }
 
-    let 创建分析器 = (stream: MediaStream): { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer> } => {
+    let 创建分析器 = (stream: MediaStream): 分析数据 => {
       let source = ctx.createMediaStreamSource(stream)
       let 分析器 = ctx.createAnalyser()
       // 增大 fftSize 以捕获更长的时域窗口（2048 / 48000 ≈ 42.7ms），减少遗漏
@@ -40,7 +40,6 @@ export class 视频音频分析器 {
       // 降低平滑系数让变化更灵敏
       分析器.smoothingTimeConstant = 0.3
       source.connect(分析器)
-      // 使用 Float32Array 以获得更高精度的时域数据（范围 -1.0 ~ 1.0）
       return { 分析器, 数据: new Float32Array(分析器.fftSize) }
     }
 
@@ -79,45 +78,22 @@ export class 视频音频分析器 {
       }
     }
 
-    let 桌面分析 = 桌面轨道 !== undefined ? 创建分析器(new MediaStream([桌面轨道])) : null
-    let 麦克风分析 = 麦克风轨道 !== undefined ? 创建分析器(new MediaStream([麦克风轨道])) : null
+    this.桌面分析 = 桌面轨道 !== undefined ? 创建分析器(new MediaStream([桌面轨道])) : null
+    this.麦克风分析 = 麦克风轨道 !== undefined ? 创建分析器(new MediaStream([麦克风轨道])) : null
 
-    let 计算音量 = (分析: { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer> } | null): number => {
-      if (分析 === null) return 0
-
-      // 使用 getFloatTimeDomainData 获取 -1.0 ~ 1.0 范围的原始波形
-      分析.分析器.getFloatTimeDomainData(分析.数据)
-
-      let sumSquares = 0.0
-      for (let i = 0; i < 分析.数据.length; i++) {
-        let sample = 分析.数据[i] ?? 0
-        sumSquares += sample * sample
-      }
-      let rms = Math.sqrt(sumSquares / 分析.数据.length)
-      return Math.min(1.0, rms * 6)
-    }
-
+    // rAF 循环仅用于更新混音器电平条显示（UI 反馈）
     let 循环 = (): void => {
       if (this.音频上下文 === null) return
 
-      // 确保 AudioContext 始终处于活跃状态
       if (this.音频上下文.state === 'suspended') {
         void this.音频上下文.resume()
       }
 
-      let 桌面音量 = 计算音量(桌面分析)
-      let 麦克风音量 = 计算音量(麦克风分析)
-
-      // 累积峰值: 取当前帧和累积值之间的较大值
-      // 这确保了即使两个 rAF 循环不同步，录制器读到的也是自上次被读取以来的峰值
-      this.桌面累积峰值 = Math.max(this.桌面累积峰值, 桌面音量)
-      this.麦克风累积峰值 = Math.max(this.麦克风累积峰值, 麦克风音量)
+      let 桌面音量 = this.计算单路音量(this.桌面分析)
+      let 麦克风音量 = this.计算单路音量(this.麦克风分析)
 
       this.混音器组件?.更新实时电平('桌面', 桌面音量)
       this.混音器组件?.更新实时电平('麦克风', 麦克风音量)
-
-      // 当前总音量使用累积峰值，确保录制器不会读到 0
-      this.当前总音量 = Math.max(this.桌面累积峰值, this.麦克风累积峰值)
 
       this.动画帧ID = requestAnimationFrame(循环)
     }
@@ -126,17 +102,32 @@ export class 视频音频分析器 {
   }
 
   /**
-   * 消费当前累积的峰值音量并重置
-   * 录制器在每帧采样时应调用此方法，这样可以确保:
-   * 1. 获取到自上次采样以来的最大音量值（不会遗漏）
-   * 2. 重置累积值，为下一帧做准备
+   * 即时从 AnalyserNode 拉取最新时域数据并计算 RMS 音量。
+   * 这是一个纯 pull 操作：直接读取 AnalyserNode 内部缓冲区，
+   * 不依赖任何 rAF 循环的中间缓存，因此完全没有竞态条件。
+   * 录制器应在自己的 rAF 回调中调用此方法。
    */
-  public 消费峰值音量(): number {
-    let 峰值 = Math.max(this.桌面累积峰值, this.麦克风累积峰值)
-    // 重置累积峰值
-    this.桌面累积峰值 = 0
-    this.麦克风累积峰值 = 0
-    return 峰值
+  public 即时计算音量(): number {
+    if (this.音频上下文 !== null && this.音频上下文.state === 'suspended') {
+      void this.音频上下文.resume()
+    }
+    let 桌面 = this.计算单路音量(this.桌面分析)
+    let 麦克风 = this.计算单路音量(this.麦克风分析)
+    return Math.max(桌面, 麦克风)
+  }
+
+  private 计算单路音量(分析: 分析数据 | null): number {
+    if (分析 === null) return 0
+
+    分析.分析器.getFloatTimeDomainData(分析.数据)
+
+    let sumSquares = 0.0
+    for (let i = 0; i < 分析.数据.length; i++) {
+      let sample = 分析.数据[i] ?? 0
+      sumSquares += sample * sample
+    }
+    let rms = Math.sqrt(sumSquares / 分析.数据.length)
+    return Math.min(1.0, rms * 6)
   }
 
   public 停止(): void {
@@ -144,6 +135,8 @@ export class 视频音频分析器 {
       cancelAnimationFrame(this.动画帧ID)
       this.动画帧ID = null
     }
+    this.桌面分析 = null
+    this.麦克风分析 = null
     if (this.音频上下文 !== null) {
       void this.音频上下文.close()
       this.音频上下文 = null

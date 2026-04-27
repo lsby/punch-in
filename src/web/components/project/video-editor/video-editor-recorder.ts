@@ -5,7 +5,7 @@ export type 录制状态 = { 切片列表: 视频片段[]; 实时波形数据: n
 
 export type 录制回调集 = {
   获取当前时间: () => number
-  消费峰值音量: () => number
+  即时计算音量: () => number
   同步时间轴: (波形数据: number[], 采样率: number, 当前时间: number) => void
   录制完成: (新切片列表: 视频片段[], 波形数据: number[], 结束时间: number) => void
 }
@@ -58,8 +58,8 @@ export class 视频录制器 {
         let 本次录制经过时间 = (performance.now() - this.录制开始时间) / 1000
         let 当前绝对时间 = 穿插起点时间 + 本次录制经过时间
 
-        // 消费自上次帧以来的峰值音量（非瞬时值），确保不遗漏声音
-        let val = 回调.消费峰值音量()
+        // 直接从 AnalyserNode 拉取最新数据（pull 模式），不依赖其他 rAF 循环
+        let val = 回调.即时计算音量()
 
         let 目标长度 = Math.floor(当前绝对时间 * 100)
         while (this.实时波形数据.length < 目标长度) {
