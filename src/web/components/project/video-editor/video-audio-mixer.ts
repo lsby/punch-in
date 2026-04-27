@@ -20,6 +20,9 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
   private 麦克风静音 = false
   private 麦克风电平条: HTMLElement | null = null
 
+  private 桌面门限 = 0.05 // 默认门限值
+  private 麦克风门限 = 0.05
+
   protected override async 当加载时(): Promise<void> {
     this.获得宿主样式().display = 'flex'
     this.获得宿主样式().flexDirection = 'column'
@@ -41,37 +44,20 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
       },
     })
 
-    let 桌面音频轨道 = this.创建轨道('桌面音频', '桌面')
+    let 桌面音频轨道 = this.创建轨道('桌面音频', '桌面', false)
     this.桌面音频电平条 = 桌面音频轨道.电平条内部
     let 分隔线 = 创建元素('div', { style: { height: '1px', backgroundColor: '#3b4252', margin: '0 12px' } })
-    let 麦克风轨道 = this.创建轨道('麦克风/Aux', '麦克风')
+    let 麦克风轨道 = this.创建轨道('麦克风/Aux', '麦克风', true)
     this.麦克风电平条 = 麦克风轨道.电平条内部
 
     this.shadow.append(标题栏, 桌面音频轨道.容器, 分隔线, 麦克风轨道.容器)
-
-    // 模拟一下电平跳动，测试UI
-    setInterval(() => {
-      if (this.桌面音频电平条 !== null) {
-        if (!this.桌面音频静音) {
-          let 随机值 = Math.random() * 100 * this.桌面音频音量
-          this.更新电平(this.桌面音频电平条, 随机值)
-        } else {
-          this.更新电平(this.桌面音频电平条, 0)
-        }
-      }
-
-      if (this.麦克风电平条 !== null) {
-        if (!this.麦克风静音) {
-          let 随机值 = Math.random() * 100 * this.麦克风音量
-          this.更新电平(this.麦克风电平条, 随机值)
-        } else {
-          this.更新电平(this.麦克风电平条, 0)
-        }
-      }
-    }, 50)
   }
 
-  private 创建轨道(名称: string, 类型: '桌面' | '麦克风'): { 容器: HTMLElement; 电平条内部: HTMLElement } {
+  private 创建轨道(
+    名称: string,
+    类型: '桌面' | '麦克风',
+    显示门限: boolean,
+  ): { 容器: HTMLElement; 电平条内部: HTMLElement } {
     let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', padding: '12px', gap: '8px' } })
 
     let 顶部行 = 创建元素('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } })
@@ -137,6 +123,37 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
     滑块容器.append(音量滑块)
     中间行.append(静音按钮, 滑块容器)
 
+    let 门限行: HTMLElement | null = null
+    if (显示门限) {
+      门限行 = 创建元素('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '36px' } })
+      let 门限标签 = 创建元素('div', {
+        textContent: '噪音门限',
+        style: { color: '#4c566a', fontSize: '11px', whiteSpace: 'nowrap' },
+      })
+      let 门限滑块 = 创建元素('input', { style: { flex: '1', height: '4px', cursor: 'pointer' } })
+      门限滑块.type = 'range'
+      门限滑块.min = '0'
+      门限滑块.max = '0.2'
+      门限滑块.step = '0.001'
+      门限滑块.value = '0.05'
+
+      let 门限db显示 = 创建元素('div', {
+        textContent: '-26.0 dB',
+        style: { color: '#4c566a', fontSize: '11px', width: '50px', textAlign: 'right' },
+      })
+
+      门限滑块.oninput = (): void => {
+        let 值 = parseFloat(门限滑块.value)
+        if (类型 === '桌面') this.桌面门限 = 值
+        if (类型 === '麦克风') this.麦克风门限 = 值
+
+        let db = 20 * Math.log10(值)
+        if (值 === 0) db = -100
+        门限db显示.textContent = db.toFixed(1) + ' dB'
+      }
+      门限行.append(门限标签, 门限滑块, 门限db显示)
+    }
+
     let 底部行 = 创建元素('div', {
       style: {
         display: 'flex',
@@ -190,9 +207,32 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
     电平条外框.append(电平条内部, 刻度容器)
     底部行.append(电平条外框)
 
-    容器.append(顶部行, 中间行, 底部行)
+    容器.append(顶部行, 中间行)
+    if (门限行 !== null) 容器.append(门限行)
+    容器.append(底部行)
 
     return { 容器, 电平条内部 }
+  }
+
+  public 更新实时电平(类型: '桌面' | '麦克风', 原始值: number): void {
+    let 静音 = 类型 === '桌面' ? this.桌面音频静音 : this.麦克风静音
+    if (静音) {
+      this.更新电平显示(类型, 0)
+      return
+    }
+
+    let 门限 = 类型 === '桌面' ? 0 : this.麦克风门限
+    let 音量 = 类型 === '桌面' ? this.桌面音频音量 : this.麦克风音量
+
+    // 噪音门限逻辑 (桌面音频不需要门限)
+    let 处理后的值 = 原始值 < 门限 ? 0 : 原始值
+    this.更新电平显示(类型, 处理后的值 * 100 * 音量)
+  }
+
+  private 更新电平显示(类型: '桌面' | '麦克风', 百分比: number): void {
+    let 元素 = 类型 === '桌面' ? this.桌面音频电平条 : this.麦克风电平条
+    if (元素 === null) return
+    元素.style.width = `${Math.min(100, Math.max(0, 百分比))}%`
   }
 
   private 更新电平(元素: HTMLElement | null, 百分比: number): void {
