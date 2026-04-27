@@ -1,5 +1,6 @@
 import { 组件基类 } from '../../../base/base'
 import { API管理器 } from '../../../global/manager/api-manager'
+import { 视频片段 } from './video-preview'
 import { 绘制刻度尺, 绘制波形 } from './video-timeline-canvas'
 import { 构建时间轴UI } from './video-timeline-ui'
 import { 格式化时间 } from './video-timeline-utils'
@@ -35,6 +36,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 预览窗: HTMLElement | null = null
   private 预览画布: HTMLCanvasElement | null = null
   private 预览时间标签: HTMLElement | null = null
+  private 播放列表: 视频片段[] = []
   private 是否正在寻求预览: boolean = false
 
   private 观察器: ResizeObserver | null = null
@@ -75,14 +77,21 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     }
 
     let 容器移动逻辑 = (e: MouseEvent): void => {
-      if (
-        this.预览窗 === null ||
-        this.轨道容器 === null ||
-        this.预览视频 === null ||
-        this.是否正在拖拽进度 ||
-        this.真实时长 <= 0
-      )
-        return
+      if (this.预览窗 === null || this.轨道容器 === null || this.是否正在拖拽进度 || this.真实时长 <= 0) return
+
+      if (this.预览视频 === null) {
+        this.预览视频 = document.createElement('video')
+        this.预览视频.muted = true
+        this.预览视频.onseeked = (): void => {
+          if (this.预览画布 !== null && this.预览视频 !== null) {
+            let 上下文 = this.预览画布.getContext('2d')
+            if (上下文 !== null) {
+              上下文.drawImage(this.预览视频, 0, 0, 180, 101)
+            }
+          }
+          this.是否正在寻求预览 = false
+        }
+      }
       this.预览窗.style.display = 'flex'
 
       let 容器矩形 = this.轨道容器.getBoundingClientRect()
@@ -111,8 +120,18 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
 
       if (!this.是否正在寻求预览) {
-        this.是否正在寻求预览 = true
-        this.预览视频.currentTime = 时间
+        let 目标片段 = this.播放列表.find((s) => 时间 >= s.start && 时间 < s.start + s.duration)
+        if (目标片段 !== undefined) {
+          this.是否正在寻求预览 = true
+          if (this.预览视频.src !== 目标片段.url) {
+            this.预览视频.src = 目标片段.url
+          }
+          this.预览视频.currentTime = 时间 - 目标片段.start
+        } else if (this.播放列表.length === 0 && this.预览视频.src !== '') {
+          // 如果没有播放列表但有 src (比如通过设置资源设置的)，则直接 seek
+          this.是否正在寻求预览 = true
+          this.预览视频.currentTime = 时间
+        }
       }
     }
 
@@ -338,6 +357,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       this.真实时长 = 0
       this.当前时间 = 0
       this.排除片段列表 = []
+      this.播放列表 = []
       this.渲染排除片段()
       this.触发重绘()
 
@@ -437,15 +457,23 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
     this.触发重绘()
   }
 
+  public 设置播放列表(列表: 视频片段[]): void {
+    this.播放列表 = 列表
+  }
+
   private 更新播放头(): void {
     if (this.播放头元素 === null) return
     let scrollLeft = this.轨道容器?.scrollLeft ?? 0
-    let logicX = this.当前时间 * this.当前缩放 - scrollLeft
+    let logicX = this.currentLogicX(scrollLeft)
     if (logicX < -10 || logicX > (this.轨道容器?.clientWidth ?? 0) + 10) {
       this.播放头元素.style.display = 'none'
     } else {
       this.播放头元素.style.display = 'block'
       this.播放头元素.style.transform = `translateX(${logicX}px)`
     }
+  }
+
+  private currentLogicX(scrollLeft: number): number {
+    return this.当前时间 * this.当前缩放 - scrollLeft
   }
 }
