@@ -4,7 +4,9 @@ import { 创建元素 } from '../../global/tools/create-element'
 import { 视频混音器组件 } from './video-editor/video-audio-mixer'
 import { 视频音频分析器 } from './video-editor/video-editor-audio'
 import { 视频录制器 } from './video-editor/video-editor-recorder'
+import { 创建规则面板 } from './video-editor/video-editor-rule-panel'
 import { 创建控制栏 } from './video-editor/video-editor-ui'
+import { 计算排除片段 } from './video-editor/video-editor-utils'
 import { 视频片段, 视频预览组件 } from './video-editor/video-preview'
 import { 视频时间轴组件 } from './video-editor/video-timeline'
 
@@ -167,6 +169,14 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     // 顶部控制栏
     let 按钮集 = 创建控制栏(() => this.录制器.是否正在录制())
 
+    // 中部主区域
+    let 中部区域 = 创建元素('div', { style: { display: 'flex', flex: '1', gap: '16px', minHeight: '0' } })
+
+    // 左侧主体 (预览 + 时间轴)
+    let 左侧主体 = 创建元素('div', {
+      style: { display: 'flex', flexDirection: 'column', flex: '1', gap: '16px', minWidth: '0' },
+    })
+
     // 预览区域
     let 预览容器 = 创建元素('div', {
       style: {
@@ -197,8 +207,26 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     this.音频分析器.设置混音器(this.混音器组件)
     混音器包装.append(this.混音器组件)
 
+    // 规则面板 (放在右侧)
+    let 规则面板包装 = 创建元素('div', { style: { display: 'none', width: '320px', flexShrink: '0', height: '100%' } })
+    let 重新计算排除片段 = (): void => {
+      let 峰值数据 = this.时间轴组件?.获取峰值数据()
+      if (峰值数据 === null || 峰值数据 === undefined || 峰值数据.length === 0) return
+      let 时长 = 峰值数据.length / 100
+      let 排除片段 = 计算排除片段(时长, 峰值数据, 100, 规则面板.获取规则列表())
+      this.时间轴组件?.设置排除片段(排除片段)
+      this.预览组件?.设置排除片段(排除片段)
+    }
+    let 规则面板 = 创建规则面板((_规则列表) => {
+      重新计算排除片段()
+    })
+    规则面板包装.append(规则面板.面板元素)
+
     底部容器.append(this.时间轴组件, 混音器包装)
-    容器.append(按钮集.控制栏, 预览容器, 底部容器)
+    左侧主体.append(预览容器, 底部容器)
+    中部区域.append(左侧主体, 规则面板包装)
+
+    容器.append(按钮集.控制栏, 中部区域)
     this.shadow.append(容器)
 
     // ── 事件绑定 ──
@@ -208,6 +236,14 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         混音器包装.style.display = 'block'
       } else {
         混音器包装.style.display = 'none'
+      }
+    }
+
+    按钮集.剪辑规则按钮.onclick = (): void => {
+      if (规则面板包装.style.display === 'none') {
+        规则面板包装.style.display = 'block'
+      } else {
+        规则面板包装.style.display = 'none'
       }
     }
 

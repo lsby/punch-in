@@ -7,6 +7,7 @@ export type 控制栏按钮集合 = {
   撤销按钮: HTMLButtonElement
   重做按钮: HTMLButtonElement
   切换混音器按钮: HTMLButtonElement
+  剪辑规则按钮: HTMLButtonElement
   导出按钮: HTMLButtonElement
 }
 
@@ -61,6 +62,7 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
   let 撤销按钮 = 创建工具按钮('↩️ 撤销')
   let 重做按钮 = 创建工具按钮('↪️ 重做')
   let 切换混音器按钮 = 创建工具按钮('🎚️ 混音器')
+  let 剪辑规则按钮 = 创建工具按钮('✂️ 剪辑规则')
 
   let 导出按钮 = 创建元素('button', {
     textContent: '💾 导出 MP4',
@@ -85,9 +87,9 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
     导出按钮.style.borderColor = '#3b82f6'
   }
 
-  顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮, 导出按钮)
+  顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮, 剪辑规则按钮, 导出按钮)
 
-  return { 控制栏: 顶部控制栏, 录制按钮, 选择屏幕按钮, 撤销按钮, 重做按钮, 切换混音器按钮, 导出按钮 }
+  return { 控制栏: 顶部控制栏, 录制按钮, 选择屏幕按钮, 撤销按钮, 重做按钮, 切换混音器按钮, 剪辑规则按钮, 导出按钮 }
 }
 
 function 创建工具按钮(文本: string): HTMLButtonElement {
