@@ -39,9 +39,35 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
     return new Promise(async (resolve) => {
       let 屏幕列表 = await api.获取屏幕列表()
-      let 内容容器 = 创建元素('div', {
-        style: { display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '20px', justifyContent: 'center' },
+      let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' } })
+
+      let 顶部栏 = 创建元素('div', {
+        style: { display: 'flex', justifyContent: 'flex-end', padding: '0 20px', alignItems: 'center', gap: '8px' },
       })
+
+      let 录制音频勾选框 = 创建元素('input', { type: 'checkbox' })
+      录制音频勾选框.checked = true
+      let 录制音频标签 = 创建元素('label', {
+        textContent: '录制系统音频',
+        style: { color: '#fff', fontSize: '14px', cursor: 'pointer' },
+      })
+      录制音频标签.onclick = (): void => {
+        录制音频勾选框.checked = !录制音频勾选框.checked
+      }
+      顶部栏.append(录制音频勾选框, 录制音频标签)
+
+      let 内容容器 = 创建元素('div', {
+        style: {
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '16px',
+          padding: '20px',
+          justifyContent: 'center',
+          overflowY: 'auto',
+          flex: '1',
+        },
+      })
+      容器.append(顶部栏, 内容容器)
 
       屏幕列表.forEach((屏幕) => {
         let 卡片 = 创建元素('div', {
@@ -62,7 +88,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           卡片.style.borderColor = 'transparent'
         }
         卡片.onclick = async (): Promise<void> => {
-          resolve(屏幕.id)
+          resolve(录制音频勾选框.checked ? `audio:${屏幕.id}` : 屏幕.id)
           await 关闭模态框()
         }
 
@@ -90,7 +116,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
       await 显示模态框(
         { 标题: '选择要录制的屏幕或窗口', 宽度: '800px', 高度: '600px', 关闭回调: () => resolve(null) },
-        内容容器,
+        容器,
       )
     })
   }
@@ -255,15 +281,18 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       try {
         let stream: MediaStream
         if (window.electronAPI?.获取屏幕列表 !== undefined) {
-          let 屏幕ID = await this.弹出屏幕选择()
-          if (屏幕ID === null || 屏幕ID === '') return
+          let 结果 = await this.弹出屏幕选择()
+          if (结果 === null || 结果 === '') return
 
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 屏幕ID },
-            } as unknown as MediaTrackConstraints,
-          })
+          let 是否要音频 = 结果.startsWith('audio:')
+          let 屏幕ID = 是否要音频 ? 结果.replace('audio:', '') : 结果
+
+          let constraints: any = {
+            audio: 是否要音频 ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
+            video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 屏幕ID } },
+          }
+
+          stream = await navigator.mediaDevices.getUserMedia(constraints)
         } else {
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
         }
@@ -307,7 +336,8 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
       this.保存历史()
 
-      this.录制器.开始录制(this.当前媒体流, {
+      let 混音流 = this.音频分析器.获得混音后的流(this.当前媒体流)
+      this.录制器.开始录制(混音流, {
         获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
         即时计算音量: (): number => this.音频分析器.即时计算音量(),
         同步时间轴: (波形数据, 采样率, 当前时间): void => {

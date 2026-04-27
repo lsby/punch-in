@@ -1,6 +1,6 @@
 import { 视频混音器组件 } from './video-audio-mixer'
 
-type 分析数据 = { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer> }
+type 分析数据 = { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer>; 增益: GainNode }
 
 export class 视频音频分析器 {
   private 音频上下文: AudioContext | null = null
@@ -10,9 +10,28 @@ export class 视频音频分析器 {
   // 持有 AnalyserNode 引用，供 即时计算音量() 直接拉取数据
   private 桌面分析: 分析数据 | null = null
   private 麦克风分析: 分析数据 | null = null
+  private 混音目标: MediaStreamAudioDestinationNode | null = null
 
   public 设置混音器(混音器: 视频混音器组件 | null): void {
     this.混音器组件 = 混音器
+    if (this.混音器组件 !== null) {
+      this.混音器组件.监听发出事件('音量改变', async (e) => {
+        let { 类型, 音量 } = e.detail
+        let 分析 = 类型 === '桌面' ? this.桌面分析 : this.麦克风分析
+        if (分析 !== null) {
+          分析.增益.gain.value = 音量
+        }
+      })
+      this.混音器组件.监听发出事件('静音状态改变', async (e) => {
+        let { 类型, 是否静音 } = e.detail
+        let 分析 = 类型 === '桌面' ? this.桌面分析 : this.麦克风分析
+        if (分析 !== null) {
+          分析.增益.gain.value = 是否静音
+            ? 0
+            : ((类型 === '桌面' ? this.混音器组件?.桌面音频音量 : this.混音器组件?.麦克风音量) ?? 1)
+        }
+      })
+    }
   }
 
   public 启动(媒体流: MediaStream): void {
@@ -26,21 +45,31 @@ export class 视频音频分析器 {
 
     this.音频上下文 = new AudioContext()
     let ctx = this.音频上下文
+    this.混音目标 = ctx.createMediaStreamDestination()
 
     // 确保 AudioContext 不会卡在 suspended 状态
     if (ctx.state === 'suspended') {
       void ctx.resume()
     }
 
-    let 创建分析器 = (stream: MediaStream): 分析数据 => {
+    let 创建分析器 = (stream: MediaStream, 初始音量: number): 分析数据 => {
       let source = ctx.createMediaStreamSource(stream)
+      let 增益 = ctx.createGain()
+      增益.gain.value = 初始音量
+
       let 分析器 = ctx.createAnalyser()
       // 增大 fftSize 以捕获更长的时域窗口（2048 / 48000 ≈ 42.7ms），减少遗漏
       分析器.fftSize = 2048
       // 降低平滑系数让变化更灵敏
       分析器.smoothingTimeConstant = 0.3
-      source.connect(分析器)
-      return { 分析器, 数据: new Float32Array(分析器.fftSize) }
+
+      source.connect(增益)
+      增益.connect(分析器)
+      if (this.混音目标 !== null) {
+        增益.connect(this.混音目标)
+      }
+
+      return { 分析器, 数据: new Float32Array(分析器.fftSize), 增益 }
     }
 
     // 尝试分离轨道（如果有的话）
@@ -78,8 +107,10 @@ export class 视频音频分析器 {
       }
     }
 
-    this.桌面分析 = 桌面轨道 !== undefined ? 创建分析器(new MediaStream([桌面轨道])) : null
-    this.麦克风分析 = 麦克风轨道 !== undefined ? 创建分析器(new MediaStream([麦克风轨道])) : null
+    this.桌面分析 =
+      桌面轨道 !== undefined ? 创建分析器(new MediaStream([桌面轨道]), this.混音器组件?.桌面音频音量 ?? 1) : null
+    this.麦克风分析 =
+      麦克风轨道 !== undefined ? 创建分析器(new MediaStream([麦克风轨道]), this.混音器组件?.麦克风音量 ?? 1) : null
 
     // rAF 循环仅用于更新混音器电平条显示（UI 反馈）
     let 循环 = (): void => {
@@ -116,6 +147,21 @@ export class 视频音频分析器 {
     return Math.max(桌面, 麦克风)
   }
 
+  /**
+   * 返回混音后的媒体流，包含原始视频轨道和混合后的音频轨道
+   */
+  public 获得混音后的流(原始流: MediaStream): MediaStream {
+    if (this.音频上下文 === null || this.混音目标 === null) return 原始流
+
+    let 结果流 = new MediaStream()
+    // 添加视频轨道
+    原始流.getVideoTracks().forEach((track) => 结果流.addTrack(track))
+    // 添加混音后的音频轨道
+    this.混音目标.stream.getAudioTracks().forEach((track) => 结果流.addTrack(track))
+
+    return 结果流
+  }
+
   private 计算单路音量(分析: 分析数据 | null): number {
     if (分析 === null) return 0
 
@@ -137,6 +183,7 @@ export class 视频音频分析器 {
     }
     this.桌面分析 = null
     this.麦克风分析 = null
+    this.混音目标 = null
     if (this.音频上下文 !== null) {
       void this.音频上下文.close()
       this.音频上下文 = null

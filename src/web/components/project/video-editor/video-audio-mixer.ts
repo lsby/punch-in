@@ -12,12 +12,12 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
     this.注册组件('lsby-video-audio-mixer', this)
   }
 
-  private 桌面音频音量 = 1.0
-  private 桌面音频静音 = false
+  public 桌面音频音量 = 1.0
+  public 桌面音频静音 = false
   private 桌面音频电平条: HTMLElement | null = null
 
-  private 麦克风音量 = 1.0
-  private 麦克风静音 = false
+  public 麦克风音量 = 1.0
+  public 麦克风静音 = false
   private 麦克风电平条: HTMLElement | null = null
 
   private 桌面门限 = 0.05 // 默认门限值
