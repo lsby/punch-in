@@ -55,7 +55,7 @@ async function run(): Promise<void> {
 
     console.log('[5/9] 正在准备可执行文件...')
     let nodeExe = process.execPath
-    let targetExe = path.join(seaDir, 'lsby-playground-ts-service.exe')
+    let targetExe = path.join(seaDir, 'lsby-punch-in.exe')
     fs.copyFileSync(nodeExe, targetExe)
 
     console.log('[6/9] 正在移除 Windows 代码签名...')
@@ -95,12 +95,12 @@ async function run(): Promise<void> {
     let runCmd = [
       '@echo off',
       'chcp 65001 >nul',
-      'echo 正在启动 lsby-playground-ts-service ...',
+      'echo 正在启动 lsby-punch-in ...',
       'echo.',
       'cd /d "%~dp0"',
       'set "ENV_FILE_PATH=./.env/.env.production-sea"',
-      'set "DEBUG=@lsby:*,@lsby:playground-ts-service:*"',
-      'lsby-playground-ts-service.exe',
+      'set "DEBUG=@lsby:*,@lsby:punch-in:*"',
+      'lsby-punch-in.exe',
       'if errorlevel 1 (',
       '  echo.',
       '  echo 程序异常退出, 按任意键关闭...',

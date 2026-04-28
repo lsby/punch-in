@@ -1,11 +1,11 @@
 services:
   app:
-    image: lsby-playground-ts-service-prod
+    image: lsby-punch-in-prod
     build:
       context: ../../
       dockerfile: ./deploy/production/dockerfile
     ports:
-      - 80:80
+      - 9002:80
     env_file:
       - ../../.env/.env.production
     restart: always

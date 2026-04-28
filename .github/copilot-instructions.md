@@ -1,4 +1,4 @@
-# lsby-playground-ts-service AI 编码指南
+# lsby-punch-in AI 编码指南
 
 ## 架构概览
 

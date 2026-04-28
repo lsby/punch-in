@@ -1,6 +1,6 @@
 services:
   app:
-    image: lsby-playground-ts-service-dev
+    image: lsby-punch-in-dev
     build:
       context: ../../
       dockerfile: ./deploy/development/dockerfile
