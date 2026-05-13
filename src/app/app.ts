@@ -1,5 +1,5 @@
 import { 接口, 接口逻辑, 服务器, 自定义接口返回器, 路径解析插件, 静态文件返回器 } from '@lsby/net-core'
-import { Right } from '@lsby/ts-fp-data'
+import { Left, Right } from '@lsby/ts-fp-data'
 import path from 'path'
 import { z } from 'zod'
 import { 环境变量 } from '../global/env'
@@ -42,8 +42,14 @@ export class App {
                 项目根路径 = path.join(import.meta.dirname, './')
                 break
             }
-            let 文件路径 = path.join(项目根路径, 'public', 参数.path.file)
-            return new Right({ filePath: 文件路径 })
+            let 基础路径 = path.resolve(项目根路径, 'public')
+            let 目标路径 = path.resolve(
+              基础路径,
+              参数.path.file.startsWith('/') ? 参数.path.file.slice(1) : 参数.path.file,
+            )
+            let 相对路径 = path.relative(基础路径, 目标路径)
+            if (相对路径.startsWith('..') || path.isAbsolute(相对路径)) return new Left('非法路径')
+            return new Right({ filePath: 目标路径 })
           }),
           new 静态文件返回器({}),
         ),
@@ -52,19 +58,23 @@ export class App {
           'get',
           接口逻辑.构造([new 路径解析插件()], async (参数) => {
             let 路径 = 参数.path.rawPath === '/' ? '/index.html' : 参数.path.rawPath
-            let web根路径: string
+            let 基础目录: string
             switch (环境变量.RUN_MODE) {
               case 'tsx':
-                web根路径 = path.join(import.meta.dirname, '../../dist/src/web', 路径)
+                基础目录 = path.join(import.meta.dirname, '../../dist/src/web')
                 break
               case 'dist':
-                web根路径 = path.join(import.meta.dirname, '../web', 路径)
+                基础目录 = path.join(import.meta.dirname, '../web')
                 break
               case 'sea':
-                web根路径 = path.join(import.meta.dirname, './dist/src/web', 路径)
+                基础目录 = path.join(import.meta.dirname, './dist/src/web')
                 break
             }
-            return new Right({ filePath: web根路径 })
+            let 基础路径 = path.resolve(基础目录)
+            let 目标路径 = path.resolve(基础路径, 路径.startsWith('/') ? 路径.slice(1) : 路径)
+            let 相对路径 = path.relative(基础路径, 目标路径)
+            if (相对路径.startsWith('..') || path.isAbsolute(相对路径)) return new Left('非法路径')
+            return new Right({ filePath: 目标路径 })
           }),
           new 静态文件返回器({}),
         ),
