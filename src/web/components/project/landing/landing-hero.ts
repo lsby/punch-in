@@ -31,7 +31,7 @@ export class 补录落地页英雄区组件 extends 组件基类<发出事件类
     })
     let 文案 = 创建元素('div', { className: 'copy' })
     let 标题 = 创建元素('h1')
-    标题.append('说错的那几秒，', 创建元素('span', { textContent: '录对就好。' }))
+    标题.append('说错的那几秒，', 创建元素('span', { textContent: '补录就好。' }))
     let 按钮区 = 创建元素('div', { className: 'buttons' })
     let 演示按钮 = 创建元素('button', { className: 'secondary', textContent: '看看它怎么工作' })
     演示按钮.onclick = (): void => {
