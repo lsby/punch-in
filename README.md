@@ -93,7 +93,7 @@ OSS 密钥配置已被 `.gitignore` 排除。建议使用只允许访问目标 B
 
 ## GitHub Pages
 
-首次部署前，在 GitHub 仓库的 `Settings → Pages → Build and deployment → Source` 中选择 `GitHub Actions`。之后推送到 `master`、推送 `v*` 标签或手动运行工作流，都会构建并发布纯前端版本。
+构建完成后使用 `JamesIves/github-pages-deploy-action` 将纯前端产物同步到 `gh-pages` 分支。首次部署成功后，在 GitHub 仓库的 `Settings → Pages → Build and deployment` 中选择 `Deploy from a branch`，分支选择 `gh-pages`、目录选择 `/ (root)`。之后推送到 `master`、推送 `v*` 标签或手动运行工作流，都会更新该分支。
 
 ## 项目结构
 
