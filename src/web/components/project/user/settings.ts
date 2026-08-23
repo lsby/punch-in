@@ -29,12 +29,13 @@ export class 用户设置组件 extends 组件基类<设置事件, 监听设置�
 
   protected async 当加载时(): Promise<void> {
     // 获取用户信息
-    this.用户信息 = await API管理器.请求postJson并处理错误('/api/user/get-current-user', {})
+    let 用户信息 = await API管理器.请求postJson并处理错误('/api/user/get-user-info', {})
+    this.用户信息 = 用户信息
 
     let 容器 = 创建元素('div', { style: { padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' } })
 
     // 如果是管理员，显示系统配置
-    if (this.用户信息.is_admin) {
+    if (用户信息.is_admin === true) {
       let 系统配置标题 = 创建元素('h2', {
         textContent: '系统配置',
         style: { margin: '0', fontSize: '18px', color: 'var(--文字颜色)' },
@@ -97,7 +98,7 @@ export class 用户设置组件 extends 组件基类<设置事件, 监听设置�
     }
 
     if (this.用户配置表单 !== undefined) {
-      let 用户配置 = await API管理器.请求postJson并处理错误('/api/system/get-user-config', {})
+      let 用户配置 = await API管理器.请求postJson并处理错误('/api/user/get-user-config', {})
       this.用户配置表单.设置数据(用户配置)
     }
   }

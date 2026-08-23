@@ -21,16 +21,24 @@ async function main(): Promise<void> {
     await new App().run()
   } catch (error) {
     console.error('启动过程中发生错误:', error)
-    app.quit()
+    app.exit(1) // 必须直接 exit(1)，不能用 quit()，否则会触发正常退出的 0 码，并导致后续的 loadURL 继续执行
+    throw error // 抛出错误以阻断后续执行
   }
 }
-main().catch(console.error)
-
+let 已经启动服务器 = false
+let 获得单实例锁 = app.requestSingleInstanceLock()
 export let 主窗口: BrowserWindow | null = null
 
 let 资源目录 = process.resourcesPath
 let 预加载脚本路径 = path.join(资源目录, 'preload.js')
-let 窗口状态路径 = path.join(资源目录, 'window-state.json')
+let 用户数据目录 =
+  app.isPackaged === true
+    ? process.platform === 'darwin'
+      ? path.resolve(path.dirname(process.execPath), '../../../data')
+      : path.resolve(path.dirname(process.execPath), '../data')
+    : path.resolve('data')
+fs.mkdirSync(用户数据目录, { recursive: true })
+let 窗口状态路径 = path.join(用户数据目录, 'window-state.json')
 
 /**
  * 创建主窗口
@@ -46,8 +54,28 @@ async function 创建主窗口(): Promise<void> {
   let 开发环境 = 环境变量.NODE_ENV === 'development'
 
   let 端口 = 环境变量.WEB_PORT
-  if ((await 检查端口可用(端口)) === false) {
-    端口 = await 获取随机可用端口()
+
+  if (开发环境 === false) {
+    // 生产环境下：先处理端口冲突（先检查后启动）
+    if ((await 检查端口可用(端口)) === false) {
+      端口 = await 获取随机可用端口()
+      // 覆盖环境变量，这样稍后启动的服务器就会使用新端口
+      环境变量.APP_PORT = 端口
+      环境变量.WEB_PORT = 端口
+      await log.info(`默认端口被占用，已切换为随机端口: ${端口}`)
+    }
+
+    // 然后再启动后端服务器，确保使用的是最终确定的无冲突端口
+    if (已经启动服务器 === false) {
+      已经启动服务器 = true
+      await main()
+    }
+  } else {
+    // 开发环境下：直接启动后端服务器，不检查端口（由开发者自行保证端口可用）
+    if (已经启动服务器 === false) {
+      已经启动服务器 = true
+      await main()
+    }
   }
 
   let 预加载脚本 = [
@@ -149,7 +177,12 @@ async function 创建主窗口(): Promise<void> {
     主窗口.webContents.openDevTools({ mode: 'detach', activate: false })
   }
 
-  await 主窗口.loadURL(`http://localhost:${端口}/`)
+  try {
+    await 主窗口.loadURL(`http://127.0.0.1:${端口}/`)
+  } catch (error) {
+    await log.error('主窗口加载失败:', error)
+    app.exit(1)
+  }
 
   主窗口.on('close', async () => {
     if (主窗口 !== null) {
@@ -162,10 +195,24 @@ async function 创建主窗口(): Promise<void> {
   })
 }
 
-app.on('ready', 创建主窗口)
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-app.on('activate', async () => {
-  if (主窗口 === null) await 创建主窗口()
-})
+async function Electron就绪(): Promise<void> {
+  await 创建主窗口()
+}
+
+if (获得单实例锁 === false) {
+  app.quit()
+} else {
+  app.on('ready', Electron就绪)
+  app.on('second-instance', () => {
+    if (主窗口 !== null) {
+      if (主窗口.isMinimized() === true) 主窗口.restore()
+      主窗口.focus()
+    }
+  })
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+  app.on('activate', async () => {
+    if (主窗口 === null) await 创建主窗口()
+  })
+}

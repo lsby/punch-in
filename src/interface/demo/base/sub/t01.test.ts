@@ -18,6 +18,10 @@ export default new 接口测试(
     let db = kysely管理器.获得句柄()
     await cleanDB(db)
     await db
+      .insertInto('system_config')
+      .values({ id: randomUUID(), is_initialized: 1, enable_register: 0, version: '', jwt_secret: '123' })
+      .execute()
+    await db
       .insertInto('user')
       .values({ id: randomUUID(), name: name, pwd: await bcrypt.hash(pwd, 环境变量.BCRYPT_ROUNDS), is_admin: 0 })
       .execute()
@@ -26,7 +30,7 @@ export default new 接口测试(
     return POST_JSON请求用例(
       接口,
       { a: 2, b: 1 },
-      { 接口: '/api/user/login', 用户名: name, 密码: pwd, 凭据属性: 'token' },
+      { 接口: '/api/project/login', 用户名: name, 密码: pwd, 凭据属性: 'token' },
     )
   },
   async (解析结果): Promise<void> => {

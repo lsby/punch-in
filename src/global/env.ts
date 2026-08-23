@@ -1,15 +1,40 @@
-import { Env } from '@lsby/ts-env'
 import { z } from 'zod'
+import { getRawEnv } from './env-provider'
 
-export let 环境变量 = new Env({
-  环境变量名称: 'ENV_FILE_PATH',
-  环境描述: z.object({
+export let 环境变量 = getRawEnv(
+  z.object({
     // 环境名称
     NODE_ENV: z.enum(['development', 'production', 'test']),
-    // 运行模式
-    RUN_MODE: z.enum(['tsx', 'dist', 'sea']),
+    /**
+     * 应用编译目标, 各模式运行时的文件结构不同:
+     *
+     * - development / test (web / pure-frontend / electron): 通过 tsx 直接运行源码, 代码在 src/ 下
+     *   项目根/
+     *   ├── src/server.ts    ← 入口
+     *   ├── src/web/         ← 前端源码 (由 parcel dev server 代理)
+     *   └── public/          ← 静态资源
+     *
+     * - production (web / electron): tsc 编译后运行, 代码在 dist/src/ 下, 多了一层 dist
+     *   项目根/
+     *   ├── dist/src/server.js    ← 入口 (web 用 node 运行)
+     *   ├── dist/src/electron.js  ← 入口 (electron 由 electron-builder 打包)
+     *   ├── dist/src/web/         ← parcel 编译后的前端产物
+     *   └── public/               ← 静态资源
+     *
+     * - production (sea): 打包为单文件可执行程序, 没有项目根的概念
+     *   任意目录/
+     *   ├── app.exe          ← 入口 (所有后端代码打包在内)
+     *   ├── dist/src/web/    ← 前端产物 (需要放在 exe 同级)
+     *   └── public/          ← 静态资源 (需要放在 exe 同级)
+     */
+    BUILD_TARGET: z.enum(['web', 'electron', 'sea', 'pure-frontend']),
     // 调试名称
     DEBUG_NAME: z.string(),
+    // 本地免登录模式
+    LOCAL_MODE: z.preprocess((val) => {
+      if (typeof val === 'string') return val.toLowerCase() === 'true'
+      return Boolean(val)
+    }, z.boolean()),
     // ========= 数据库部分 开始 =========
     DB_TYPE: z.enum(['sqlite', 'pg', 'mysql']),
     // sqlite
@@ -36,9 +61,9 @@ export let 环境变量 = new Env({
     // 文件上传
     UPLOAD_MAX_FILE_SIZE: z.coerce.number(),
     // JWT
-    JWT_SECRET: z.string(),
+    DEFAULT_JWT_SECRET: z.string(),
     JWT_EXPIRES_IN: z.string(),
     // bcrypt
     BCRYPT_ROUNDS: z.coerce.number(),
   }),
-}).获得环境变量()
+)

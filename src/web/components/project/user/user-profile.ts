@@ -12,7 +12,11 @@ export class 用户信息组件 extends 组件基类<发出事件类型, 监听�
   }
 
   protected override async 当加载时(): Promise<void> {
-    let 用户信息 = await API管理器.请求postJson并处理错误('/api/user/get-current-user', {})
+    let 结果 = await API管理器.请求postJson('/api/user/get-user-info', {})
+    if (结果.status !== 'success') {
+      return
+    }
+    let 用户信息 = 结果.data
 
     let 容器 = 创建元素('div')
     容器.style.display = 'flex'

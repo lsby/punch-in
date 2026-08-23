@@ -1,1 +1,1 @@
-{ "appId": "lsby.punch.in", "appName": "lsby-punch-in", "webDir": "dist/web" }
+{ "appId": "lsby.punch.in", "appName": "lsby-punch-in", "webDir": "dist/src/web" }

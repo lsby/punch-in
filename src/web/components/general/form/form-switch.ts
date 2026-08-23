@@ -1,5 +1,5 @@
-import { 增强样式类型 } from 'src/web/global/types/style'
 import { 创建元素, 应用宿主样式 } from '../../../global/tools/create-element'
+import { 增强样式类型 } from '../../../global/types/style'
 import { 表单组件基类 } from './form'
 
 type 切换开关事件 = { 变化: boolean }

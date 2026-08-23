@@ -1,3 +1,4 @@
+import { 环境变量 } from '../../../global/env'
 import { 组件基类 } from '../../base/base'
 import { globalWebLog } from '../../global/manager/log-manager'
 
@@ -17,9 +18,9 @@ export class 设置调试组件 extends 组件基类<发出事件类型, 监听�
   }
 
   protected override async 当加载时(): Promise<void> {
-    console.log('当前环境: %o', process.env['NODE_ENV'])
+    console.log('当前环境: %o', 环境变量.NODE_ENV)
 
-    if (process.env['NODE_ENV'] !== 'development') {
+    if (环境变量.NODE_ENV !== 'development') {
       // 生产模式
       localStorage['debug'] = ''
     } else {
@@ -28,40 +29,52 @@ export class 设置调试组件 extends 组件基类<发出事件类型, 监听�
       let 排除事件属性 = this.getAttribute('排除事件')
       let 排除事件: string[] = 排除事件属性 !== null ? 排除事件属性.split(',').map((s) => s.trim()) : []
 
-      // 劫持 addEventListener
+      // 劫持 addEventListener / removeEventListener
       let originalAddEventListener = EventTarget.prototype.addEventListener
-      EventTarget.prototype.addEventListener = async function (type, listener, options): Promise<void> {
-        if (排除事件.includes(type)) {
+      let originalRemoveEventListener = EventTarget.prototype.removeEventListener
+      // 保存原始 listener → 包装 listener 的映射，使 removeEventListener 能正确匹配
+      let 监听器映射 = new WeakMap<EventListenerOrEventListenerObject, EventListener>()
+
+      EventTarget.prototype.addEventListener = function (type, listener, options): void {
+        if (排除事件.includes(type) || listener === null) {
           return originalAddEventListener.call(this, type, listener, options)
         }
 
         let 组件日志 = globalWebLog.extend(this.constructor.name)
-        await 组件日志.debug('监听事件: %o <= %O, %O', type, listener, options)
+        void 组件日志.debug('监听事件: %o <= %O, %O', type, listener, options)
 
         if (typeof listener === 'function') {
-          originalAddEventListener.call(
-            this,
-            type,
-            async (event) => {
-              await 组件日志.debug('事件触发: %o <= %O, %O', type, listener, options)
-              return (listener as any).call(listener, event)
-            },
-            options,
-          )
+          let 包装函数: EventListener = (event) => {
+            void 组件日志.debug('事件触发: %o <= %O, %O', type, listener, options)
+            return (listener as any).call(this, event)
+          }
+          监听器映射.set(listener, 包装函数)
+          originalAddEventListener.call(this, type, 包装函数, options)
         } else if (
           typeof listener === 'object' &&
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           listener !== null &&
           typeof (listener as any).handleEvent === 'function'
         ) {
-          originalAddEventListener.call(
-            this,
-            type,
-            async (event) => {
-              await 组件日志.debug('事件触发: %o <= %O, %O', type, listener, options)
-              return (listener as any).handleEvent.call(listener, event)
-            },
-            options,
-          )
+          let 包装函数: EventListener = (event) => {
+            void 组件日志.debug('事件触发: %o <= %O, %O', type, listener, options)
+            return (listener as any).handleEvent.call(listener, event)
+          }
+          监听器映射.set(listener, 包装函数)
+          originalAddEventListener.call(this, type, 包装函数, options)
+        }
+      }
+
+      EventTarget.prototype.removeEventListener = function (type, listener, options): void {
+        if (listener === null) {
+          return originalRemoveEventListener.call(this, type, listener, options)
+        }
+        let 包装函数 = 监听器映射.get(listener)
+        if (包装函数 !== undefined) {
+          originalRemoveEventListener.call(this, type, 包装函数, options)
+          监听器映射.delete(listener)
+        } else {
+          originalRemoveEventListener.call(this, type, listener, options)
         }
       }
 

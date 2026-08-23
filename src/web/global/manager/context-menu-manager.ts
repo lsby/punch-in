@@ -1,6 +1,6 @@
 import { 创建元素 } from '../tools/create-element'
 
-export type 右键菜单项 = { 文本: string; 回调: () => Promise<void> } | '分隔符'
+export type 右键菜单项 = { 文本: string; 回调: () => Promise<void>; 图标?: string | HTMLElement } | '分隔符'
 
 export class 右键菜单管理器 {
   private static 实例: 右键菜单管理器 | null = null
@@ -33,6 +33,7 @@ export class 右键菜单管理器 {
         backdropFilter: 'blur(12px)',
         userSelect: 'none',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       },
     })
 
@@ -46,7 +47,6 @@ export class 右键菜单管理器 {
       }
 
       let 项元素 = 创建元素('div', {
-        textContent: 菜单项.文本,
         style: {
           padding: '8px 12px',
           borderRadius: '8px',
@@ -72,6 +72,19 @@ export class 右键菜单管理器 {
           项元素.style.color = '#e5e7eb'
         },
       })
+
+      if (菜单项.图标 !== undefined) {
+        let 图标容器 = 创建元素('span', { style: { display: 'inline-flex', alignItems: 'center', opacity: '0.8' } })
+        if (typeof 菜单项.图标 === 'string') {
+          图标容器.innerHTML = 菜单项.图标
+        } else {
+          图标容器.appendChild(菜单项.图标)
+        }
+        项元素.appendChild(图标容器)
+      }
+
+      let 文本标签 = 创建元素('span', { textContent: 菜单项.文本 })
+      项元素.appendChild(文本标签)
       菜单容器.appendChild(项元素)
     }
 
