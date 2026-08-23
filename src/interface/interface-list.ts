@@ -32,7 +32,6 @@ import _src_interface_demo_plugin_advanced_custom_type_export_index_ts from './d
 import _src_interface_demo_plugin_advanced_express_middleware_wrap_index_ts from './demo/plugin-advanced/express-middleware-wrap/index'
 import _src_interface_demo_pure_pure_string_index_ts from './demo/pure/pure-string/index'
 import _src_interface_demo_ws_ws_test_index_ts from './demo/ws/ws-test/index'
-import _src_interface_project_get_video_peaks_index_ts from './project/get-video-peaks/index'
 import _src_interface_project_is_login_index_ts from './project/is-login/index'
 import _src_interface_project_local_login_index_ts from './project/local-login/index'
 import _src_interface_project_login_index_ts from './project/login/index'
@@ -80,7 +79,6 @@ export let interfaceApiList: 任意接口[] = [
   _src_interface_demo_plugin_advanced_express_middleware_wrap_index_ts,
   _src_interface_demo_pure_pure_string_index_ts,
   _src_interface_demo_ws_ws_test_index_ts,
-  _src_interface_project_get_video_peaks_index_ts,
   _src_interface_project_is_login_index_ts,
   _src_interface_project_local_login_index_ts,
   _src_interface_project_login_index_ts,

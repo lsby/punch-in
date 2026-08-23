@@ -1,5 +1,4 @@
 import { 组件基类 } from '../../../base/base'
-import { API管理器 } from '../../../global/manager/api-manager'
 import { 视频片段 } from './video-preview'
 import { 绘制刻度尺, 绘制波形 } from './video-timeline-canvas'
 import { 构建时间轴UI } from './video-timeline-ui'
@@ -357,78 +356,6 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
     this.渲染排除片段()
     this.触发重绘()
-  }
-
-  public async 设置资源(url: string, 文件名?: string, 真实路径?: string): Promise<void> {
-    if (this.波形加载遮罩 !== null) {
-      this.波形加载遮罩.style.display = 'flex'
-    }
-    if (this.轨道容器 !== null) {
-      this.轨道容器.scrollLeft = 0
-    }
-
-    try {
-      this.峰值数据 = []
-      this.已处理实时峰值数 = 0
-      this.真实时长 = 0
-      this.当前时间 = 0
-      this.排除片段列表 = []
-      this.播放列表 = []
-      this.渲染排除片段()
-      this.触发重绘()
-
-      if (真实路径 !== undefined) {
-        try {
-          let 结果 = await API管理器.请求postJson并处理错误('/api/project/get-video-peaks', {
-            videoPath: 真实路径,
-            samplesPerSecond: 100,
-          })
-          this.峰值数据 = 结果.peaks
-          this.真实时长 = this.峰值数据.length / 100
-          this.全局最大峰值 = 0
-          for (let p of this.峰值数据) {
-            if (p > this.全局最大峰值) this.全局最大峰值 = p
-          }
-        } catch (e) {
-          console.error('获取峰值数据失败:', e)
-        }
-      }
-
-      if (this.真实时长 > 0) {
-        let 视口宽度 = this.轨道容器?.clientWidth ?? 1000
-        this.当前缩放 = Math.max(this.默认缩放, 视口宽度 / this.真实时长)
-        this.执行缩放(this.当前缩放)
-      }
-    } finally {
-      if (this.波形加载遮罩 !== null) {
-        this.波形加载遮罩.style.display = 'none'
-      }
-    }
-
-    if (this.预览视频 === null) {
-      this.预览视频 = document.createElement('video')
-      this.预览视频.muted = true
-      this.预览视频.onseeked = (): void => {
-        if (this.预览画布 !== null && this.预览视频 !== null) {
-          let 上下文 = this.预览画布.getContext('2d')
-          if (上下文 !== null) {
-            上下文.drawImage(this.预览视频, 0, 0, 180, 101)
-          }
-        }
-        this.是否正在寻求预览 = false
-      }
-    }
-    this.预览视频.src = url
-
-    if (this.预览窗 !== null) {
-      this.预览窗.style.display = 'none'
-    }
-    if (this.预览画布 !== null) {
-      let 上下文 = this.预览画布.getContext('2d')
-      if (上下文 !== null) {
-        上下文.clearRect(0, 0, this.预览画布.width, this.预览画布.height)
-      }
-    }
   }
 
   public 同步进度(时间: number): void {

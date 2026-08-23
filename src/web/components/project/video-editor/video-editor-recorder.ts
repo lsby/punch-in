@@ -20,6 +20,7 @@ export class 视频录制器 {
   private 本地存储: 视频本地存储
   private 当前回调: 录制回调集 | null = null
   private 阶段: 录制阶段 = '空闲'
+  private 收尾任务: Promise<void> | null = null
 
   public 实时波形数据: number[] = []
   public 切片列表: 视频片段[] = []
@@ -68,34 +69,27 @@ export class 视频录制器 {
   }
 
   public async 停止(): Promise<void> {
-    if (this.阶段 !== '录制中') return
+    switch (this.阶段) {
+      case '空闲':
+      case '启动中':
+        return
+      case '收尾中': {
+        let 任务 = this.收尾任务
+        if (任务 !== null) await 任务
+        return
+      }
+      case '录制中':
+        break
+    }
     this.阶段 = '收尾中'
     this.停止波形循环()
     let 回调 = this.当前回调
+    let 任务 = this.执行停止(回调)
+    this.收尾任务 = 任务
     try {
-      let 编码结果 = await this.导出器.停止录制()
-      this.追加波形样本()
-      let 录制结束时间 = this.穿插起点时间 + 编码结果.duration
-      let 目标波形长度 = Math.floor(录制结束时间 * 100)
-      let 最后音量 = this.实时波形数据[this.实时波形数据.length - 1] ?? 0
-      while (this.实时波形数据.length < 目标波形长度) this.实时波形数据.push(最后音量)
-      if (this.实时波形数据.length > 目标波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 目标波形长度)
-      this.切片列表 = await this.本地存储.完成片段(
-        编码结果.id,
-        编码结果.文件名,
-        this.穿插起点时间,
-        编码结果.duration,
-        this.实时波形数据,
-      )
-      if (回调 !== null) await 回调.录制完成(this.切片列表, this.实时波形数据, 录制结束时间)
-      if (编码结果.警告 !== null) 回调?.录制错误(new Error(`编码提前结束，已保留可恢复内容：${编码结果.警告.message}`))
-    } catch (错误) {
-      let 规范错误 = 错误 instanceof Error ? 错误 : new Error(String(错误))
-      回调?.录制错误(规范错误)
-      throw 规范错误
+      await 任务
     } finally {
-      this.阶段 = '空闲'
-      this.当前回调 = null
+      if (this.收尾任务 === 任务) this.收尾任务 = null
     }
   }
 
@@ -126,6 +120,34 @@ export class 视频录制器 {
     if (this.当前回调 === null) return
     let 样本 = this.当前回调.提取波形样本()
     if (样本.length > 0) this.实时波形数据.push(...样本)
+  }
+
+  private async 执行停止(回调: 录制回调集 | null): Promise<void> {
+    try {
+      let 编码结果 = await this.导出器.停止录制()
+      this.追加波形样本()
+      let 录制结束时间 = this.穿插起点时间 + 编码结果.duration
+      let 目标波形长度 = Math.floor(录制结束时间 * 100)
+      let 最后音量 = this.实时波形数据[this.实时波形数据.length - 1] ?? 0
+      while (this.实时波形数据.length < 目标波形长度) this.实时波形数据.push(最后音量)
+      if (this.实时波形数据.length > 目标波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 目标波形长度)
+      this.切片列表 = await this.本地存储.完成片段(
+        编码结果.id,
+        编码结果.文件名,
+        this.穿插起点时间,
+        编码结果.duration,
+        this.实时波形数据,
+      )
+      if (回调 !== null) await 回调.录制完成(this.切片列表, this.实时波形数据, 录制结束时间)
+      if (编码结果.警告 !== null) 回调?.录制错误(new Error(`编码提前结束，已保留可恢复内容：${编码结果.警告.message}`))
+    } catch (错误) {
+      let 规范错误 = 错误 instanceof Error ? 错误 : new Error(String(错误))
+      回调?.录制错误(规范错误)
+      throw 规范错误
+    } finally {
+      this.阶段 = '空闲'
+      this.当前回调 = null
+    }
   }
 
   private 停止波形循环(): void {

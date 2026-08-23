@@ -40,6 +40,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
   private 存储刷新定时器: number | null = null
   private 正在执行空间保护 = false
   private 已提示空间不足 = false
+  private 录制启动任务: Promise<void> | null = null
 
   private 历史栈: 历史状态[] = []
   private 重做栈: 历史状态[] = []
@@ -331,45 +332,12 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         alert('请先选择屏幕')
         return
       }
-      this.保存历史()
-      按钮集.录制按钮.disabled = true
-      按钮集.录制按钮.textContent = '正在启动'
+      let 启动任务 = this.开始当前录制(按钮集)
+      this.录制启动任务 = 启动任务
       try {
-        await this.启动麦克风采集()
-        let 混音流 = this.音频分析器.获得混音后的流(this.当前媒体流)
-        this.预览组件?.设置视频流(this.当前媒体流)
-        await this.录制器.开始录制(混音流, {
-          获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
-          提取波形样本: (): number[] => this.音频分析器.提取波形样本(),
-          同步时间轴: (波形数据, 采样率, 当前时间): void => {
-            this.时间轴组件?.更新实时峰值数据(波形数据, 采样率)
-            this.时间轴组件?.同步进度(当前时间)
-          },
-          录制完成: async (新切片列表, 波形数据, 结束时间): Promise<void> => {
-            await this.停止麦克风采集()
-            this.预览组件?.设置视频流(null)
-            this.预览组件?.设置播放列表(新切片列表)
-            this.时间轴组件?.设置播放列表(新切片列表)
-            this.时间轴组件?.设置峰值数据(波形数据, 100, false)
-            this.重新计算排除片段()
-            setTimeout((): void => {
-              this.时间轴组件?.同步进度(结束时间)
-              this.预览组件?.跳转(结束时间)
-            }, 50)
-            await this.清理未引用片段()
-          },
-          录制错误: (错误): void => {
-            void this.停止麦克风采集().catch((停止错误: unknown): void => console.error('停止麦克风采集失败', 停止错误))
-            this.设置录制按钮状态(false)
-            alert(`录制失败: ${错误.message}`)
-          },
-        })
-        this.设置录制按钮状态(true)
-      } catch (错误) {
-        this.历史栈.pop()
-        await this.停止麦克风采集()
-        this.设置录制按钮状态(false)
-        alert(`开始录制失败: ${String(错误)}`)
+        await 启动任务
+      } finally {
+        if (this.录制启动任务 === 启动任务) this.录制启动任务 = null
       }
     }
 
@@ -387,11 +355,53 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     if (this.存储刷新定时器 !== null) clearInterval(this.存储刷新定时器)
     this.存储刷新定时器 = null
     try {
-      if (this.录制器.是否正在录制()) await this.录制器.停止()
-      else if (this.录制器.获得阶段() !== '空闲') await this.录制器.取消()
-    } finally {
       await this.停止媒体采集()
+    } finally {
       await this.本地存储.关闭()
+    }
+  }
+
+  private async 开始当前录制(按钮集: 控制栏按钮集合): Promise<void> {
+    this.保存历史()
+    按钮集.录制按钮.disabled = true
+    按钮集.录制按钮.textContent = '正在启动'
+    try {
+      await this.启动麦克风采集()
+      let 当前媒体流 = this.当前媒体流
+      if (当前媒体流 === null) throw new Error('屏幕采集已结束')
+      let 混音流 = this.音频分析器.获得混音后的流(当前媒体流)
+      this.预览组件?.设置视频流(当前媒体流)
+      await this.录制器.开始录制(混音流, {
+        获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
+        提取波形样本: (): number[] => this.音频分析器.提取波形样本(),
+        同步时间轴: (波形数据, 采样率, 当前时间): void => {
+          this.时间轴组件?.更新实时峰值数据(波形数据, 采样率)
+          this.时间轴组件?.同步进度(当前时间)
+        },
+        录制完成: async (新切片列表, 波形数据, 结束时间): Promise<void> => {
+          await this.释放媒体采集()
+          this.预览组件?.设置播放列表(新切片列表)
+          this.时间轴组件?.设置播放列表(新切片列表)
+          this.时间轴组件?.设置峰值数据(波形数据, 100, false)
+          this.重新计算排除片段()
+          setTimeout((): void => {
+            this.时间轴组件?.同步进度(结束时间)
+            this.预览组件?.跳转(结束时间)
+          }, 50)
+          await this.清理未引用片段()
+        },
+        录制错误: (错误): void => {
+          void this.释放媒体采集().catch((停止错误: unknown): void => console.error('停止媒体采集失败', 停止错误))
+          this.设置录制按钮状态(false)
+          alert(`录制失败: ${错误.message}`)
+        },
+      })
+      this.设置录制按钮状态(true)
+    } catch (错误) {
+      this.历史栈.pop()
+      await this.释放媒体采集()
+      this.设置录制按钮状态(false)
+      alert(`开始录制失败: ${String(错误)}`)
     }
   }
 
@@ -421,27 +431,28 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
   }
 
-  private async 停止麦克风采集(): Promise<void> {
-    let 麦克风轨道 = this.当前音频轨道来源.麦克风轨道
-    if (麦克风轨道 === null) return
-    this.当前媒体流?.removeTrack(麦克风轨道)
-    麦克风轨道.stop()
-    this.当前音频轨道来源 = { ...this.当前音频轨道来源, 麦克风轨道: null }
-    try {
-      await this.音频分析器.启动(this.当前音频轨道来源)
-    } catch (错误) {
-      console.error('恢复桌面音频分析失败', 错误)
+  private async 停止媒体采集(): Promise<void> {
+    let 启动任务 = this.录制启动任务
+    if (启动任务 !== null) await 启动任务
+    switch (this.录制器.获得阶段()) {
+      case '空闲':
+        break
+      case '启动中':
+        await this.录制器.取消()
+        break
+      case '录制中':
+      case '收尾中':
+        try {
+          await this.录制器.停止()
+        } catch (错误) {
+          console.error('采集结束时保存录制失败', 错误)
+        }
+        break
     }
+    await this.释放媒体采集()
   }
 
-  private async 停止媒体采集(): Promise<void> {
-    if (this.录制器.是否正在录制()) {
-      try {
-        await this.录制器.停止()
-      } catch (错误) {
-        console.error('采集结束时保存录制失败', 错误)
-      }
-    }
+  private async 释放媒体采集(): Promise<void> {
     let stream = this.当前媒体流
     this.当前媒体流 = null
     this.是否录制麦克风 = false
