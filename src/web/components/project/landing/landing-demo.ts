@@ -82,7 +82,7 @@ export class 补录时间轴动画组件 extends 组件基类<发出事件类型
     this.演示按钮.onclick = (): void => this.推进演示()
     let 顶栏 = 创建元素('div', { className: 'topbar' })
     this.状态容器.append(this.状态文本)
-    顶栏.append(创建元素('span', { className: 'title', textContent: '时间轴上的一次补录' }), this.状态容器)
+    顶栏.append(创建元素('span', { className: 'title', textContent: '时间轴上的一次回退续录' }), this.状态容器)
     let 预览 = 创建元素('div', { className: 'preview' })
     预览.append(创建元素('span', { className: 'preview-label', textContent: '录制画面' }), this.预览文本)
     let 轨道 = 创建元素('div', { className: 'track' })
@@ -95,7 +95,7 @@ export class 补录时间轴动画组件 extends 组件基类<发出事件类型
     let 控制区 = 创建元素('div', { className: 'controls' })
     控制区.append(创建元素('span', { className: 'hint', textContent: '点击右侧按钮，逐步查看补录过程' }), this.演示按钮)
     let 步骤区 = 创建元素('div', { className: 'steps' })
-    for (let 项 of ['空时间轴', '开始录制', '发现口误', '回退补录', '修正完成']) {
+    for (let 项 of ['空时间轴', '开始录制', '发现口误', '回退续录', '修正完成']) {
       let 步骤 = 创建元素('div', { className: 'step' })
       步骤.append(创建元素('b', { textContent: String(步骤区.childElementCount + 1) }), 项)
       步骤区.append(步骤)
@@ -195,33 +195,33 @@ export class 补录时间轴动画组件 extends 组件基类<发出事件类型
     this.更新步骤(3)
     this.安排任务((): void => {
       this.当前阶段 = '已回退'
-      this.预览文本.textContent = '已经回到说错前，可以开始补录'
-      this.状态文本.textContent = '已停在口误起点'
-      this.演示按钮.textContent = '开始补录'
+      this.预览文本.textContent = '已经回到说错前，可以从这里重新录制'
+      this.状态文本.textContent = '继续录制会删除播放头后的旧内容'
+      this.演示按钮.textContent = '开始续录'
       this.演示按钮.disabled = false
     }, 750)
   }
 
   private 开始补录(): void {
     this.清理定时器()
-    this.演示按钮.textContent = '正在补录'
+    this.演示按钮.textContent = '正在续录'
     this.演示按钮.disabled = true
     this.修正区域.className = 'repair is-filling'
     this.续录区域.className = 'continued is-filling'
     this.播放头.className = 'playhead is-retaking'
     this.预览文本.textContent = '快速修正口误'
-    this.状态文本.textContent = '从口误起点继续录制'
+    this.状态文本.textContent = '从口误起点重录，后方旧内容已舍弃'
     this.状态容器.className = 'status is-recording'
     this.更新步骤(4)
     this.安排任务((): void => {
       this.口误区域.className = 'wrong is-fixed'
-      this.状态文本.textContent = '红色口误已经被正确内容覆盖'
+      this.状态文本.textContent = '口误和后续旧内容正由新录制替代'
       this.状态容器.className = 'status is-success'
     }, 1250)
     this.安排任务((): void => {
       this.当前阶段 = '补录完成'
-      this.预览文本.textContent = '补录完成，后面的内容继续保留'
-      this.状态文本.textContent = '修正完成，时间轴继续向前'
+      this.预览文本.textContent = '续录完成，时间轴由新内容继续向前'
+      this.状态文本.textContent = '出错点以前保留，此后已经重新录制'
       this.演示按钮.textContent = '重新演示'
       this.演示按钮.disabled = false
     }, 2500)
@@ -246,11 +246,12 @@ export class 补录落地页演示组件 extends 组件基类<发出事件类型
     })
     let 文案 = 创建元素('div')
     文案.append(
-      创建元素('p', { className: 'eyebrow', textContent: '只重录说错的部分' }),
-      创建元素('h2', { textContent: '从口误处退回来，录对后继续。' }),
+      创建元素('p', { className: 'eyebrow', textContent: '看一次实际的回退续录' }),
+      创建元素('h2', { textContent: '前面不动，后面重来。' }),
       创建元素('p', {
         className: 'copy',
-        textContent: '先正常录制，发现口误后时间轴会标红并回到出错前。点击补录，正确内容沿着原来的时间轴继续覆盖口误。',
+        textContent:
+          '说错了就停下来，把播放头拖回出错的起点。再次录制时，前面的内容原样保留，出错的部分连同后面的旧内容一起丢掉，由这次新录制接上。',
       }),
     )
     let 区域 = 创建元素('section', { className: 'demo' })

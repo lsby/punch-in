@@ -43,10 +43,11 @@ export class 补录落地页英雄区组件 extends 组件基类<发出事件类
       标题,
       创建元素('p', {
         className: 'description',
-        textContent: '不再因为一句口误重录整段视频。定位到时间轴、原位补录、用规则清掉停顿，然后直接导出原画 MP4。',
+        textContent:
+          '录教程、演示或课程，总得一边操作一边讲。讲错了、点错了都很正常——停下来，把时间轴退回出错的地方，前面录好的内容原封不动，从这里接着重新录就行。',
       }),
       按钮区,
-      创建元素('p', { className: 'privacy', textContent: '纯前端运行 · 素材不上传 · 数据保存在当前浏览器' }),
+      创建元素('p', { className: 'privacy', textContent: '在你的浏览器里运行 · 录屏素材不离开本机' }),
     )
     let 动画 = new 补录时间轴动画组件()
     动画.setAttribute('精简', 'true')
