@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">补录录标志</title>
+  <desc id="desc">由三段时间轴和一个补录片段组成的标志</desc>
+  <defs>
+    <linearGradient id="background" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7457ff"/>
+      <stop offset="1" stop-color="#16c7b7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#10132b" flood-opacity=".25"/>
+    </filter>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#background)"/>
+  <g filter="url(#shadow)">
+    <path d="M31 40h66a9 9 0 0 1 9 9v6a9 9 0 0 1-9 9H31a9 9 0 0 1-9-9v-6a9 9 0 0 1 9-9Z" fill="#fff" fill-opacity=".94"/>
+    <path d="M31 70h27a9 9 0 0 1 9 9v6a9 9 0 0 1-9 9H31a9 9 0 0 1-9-9v-6a9 9 0 0 1 9-9Z" fill="#fff" fill-opacity=".74"/>
+    <path d="M76 70h21a9 9 0 0 1 9 9v6a9 9 0 0 1-9 9H76a9 9 0 0 1-9-9v-6a9 9 0 0 1 9-9Z" fill="#fff" fill-opacity=".94"/>
+    <path d="M72 34v66" stroke="#ffdd6e" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="72" cy="34" r="6" fill="#ffdd6e"/>
+  </g>
+</svg>

@@ -6,6 +6,7 @@
     "type": "git",
     "url": "https://github.com/lsby/punch-in.git"
   },
+  "license": "MIT",
   "type": "module",
   "main": "./dist/src/electron.js",
   "browser": {
@@ -53,6 +54,7 @@
     "public:docker:remote": "tsx scripts/public/release-docker-remote.ts",
     "public:electron": "tsx scripts/public/release-electron.ts",
     "public:npm": "tsx scripts/public/release-npm.ts",
+    "public:oss:aliyun": "tsx scripts/public/release-oss-aliyun.ts",
     "public:sea": "tsx scripts/public/release-sea.ts",
     "public:web:pure-frontend": "tsx scripts/public/release-pure-frontend.ts",
     "release": "tsx scripts/release/release.ts",
@@ -121,6 +123,7 @@
     "@parcel/config-default": "^2.16.4",
     "@parcel/transformer-inline-string": "^2.16.4",
     "@playwright/test": "^1.40.0",
+    "@types/ali-oss": "^6.23.3",
     "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/eslint": "^9.6.1",
@@ -129,6 +132,7 @@
     "@types/node-schedule": "^2.1.8",
     "@types/stream-to-blob": "^2.0.0",
     "@vitest/coverage-v8": "^2.1.1",
+    "ali-oss": "^6.23.0",
     "archiver": "^7.0.1",
     "bumpp": "^10.3.1",
     "electron": "^38.1.0",

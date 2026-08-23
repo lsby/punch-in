@@ -1,3 +1,4 @@
+import { 环境变量 } from '../../../global/env'
 import { 组件基类 } from '../../base/base'
 import { API管理器 } from '../../global/manager/api-manager'
 
@@ -10,18 +11,18 @@ export class 检查登录组件 extends 组件基类<发出事件类型, 监听�
   }
 
   protected override async 当加载时(): Promise<void> {
-    let 结果 = await API管理器.请求postJson并处理错误('/api/project/is-login', {})
-    if (结果.isLogin === true) return
-
-    // 尝试本地免密码登录
-    let 本地登录结果 = await API管理器.请求postJson('/api/project/local-login', {})
-    if (本地登录结果.status === 'success') {
+    if (环境变量.LOCAL_MODE === true || 环境变量.BUILD_TARGET === 'pure-frontend') {
+      let 本地登录结果 = await API管理器.请求postJson('/api/project/local-login', {})
+      if (本地登录结果.status !== 'success') throw new Error(`本地模式自动登录失败: ${本地登录结果.data}`)
       API管理器.设置token(本地登录结果.data.token)
       return
     }
 
+    let 结果 = await API管理器.请求postJson并处理错误('/api/project/is-login', {})
+    if (结果.isLogin === true) return
+
     // 将当前页面路径作为 URL 参数传递给登录页
     let 当前路径 = encodeURIComponent(window.location.pathname + window.location.search)
-    window.location.assign(`/login.html?redirect=${当前路径}`)
+    window.location.assign(`./login.html?redirect=${当前路径}`)
   }
 }

@@ -338,9 +338,9 @@ export class 登录组件 extends 组件基类<发出事件类型, 监听事件�
       let 重定向路径 = urlParams.get('redirect')
       if (重定向路径 !== null) {
         let 重定向地址 = decodeURIComponent(重定向路径)
-        window.location.assign(重定向地址 === '/' ? '/index.html' : 重定向地址)
+        window.location.assign(重定向地址 === '/' ? './app.html' : 重定向地址)
       } else {
-        window.location.assign('/index.html')
+        window.location.assign('./app.html')
       }
     }
   }

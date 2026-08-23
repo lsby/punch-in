@@ -1,0 +1,7 @@
+{
+  "region": "oss-cn-beijing",
+  "accessKeyId": "请填写 accessKeyId",
+  "accessKeySecret": "请填写 accessKeySecret",
+  "bucket": "请填写 bucket",
+  "云端目标目录": "punch-in/"
+}
