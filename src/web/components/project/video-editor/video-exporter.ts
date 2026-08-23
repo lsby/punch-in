@@ -197,6 +197,7 @@ export class 视频导出器 {
         target: target,
         video: { codec: 'avc', width: videoConfig.width, height: videoConfig.height },
         fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset',
       }
       if (audioConfig !== undefined) {
         options.audio = {
@@ -233,42 +234,39 @@ export class 视频导出器 {
             let 相对时间 = 块.timestamp - startVTs
             return 块.type === 'key' && 相对时间 >= 范围起点相对时间 && 相对时间 < 范围终点相对时间
           })
-          if (起始关键帧 === undefined) continue
-
-          let 实际起点相对时间 = 起始关键帧.timestamp - startVTs
-          let 实际范围时长 = 范围终点相对时间 - 实际起点相对时间
-          if (实际范围时长 <= 0) continue
-
-          for (let vc of videoChunks) {
-            let relativeTs = vc.timestamp - startVTs
-            if (relativeTs < 实际起点相对时间 || relativeTs >= 范围终点相对时间) continue
-            let meta: EncodedVideoChunkMetadata | undefined
-            if (curVConfig.description !== undefined && (vc.type === 'key' || videoTrackHasConfig === false)) {
-              meta = {
-                decoderConfig: {
-                  codec: curVConfig.codec,
-                  description: curVConfig.description,
-                  codedWidth: curVConfig.width,
-                  codedHeight: curVConfig.height,
-                },
+          if (起始关键帧 !== undefined) {
+            let 视频起点相对时间 = 起始关键帧.timestamp - startVTs
+            for (let vc of videoChunks) {
+              let relativeTs = vc.timestamp - startVTs
+              if (relativeTs < 视频起点相对时间 || relativeTs >= 范围终点相对时间) continue
+              let meta: EncodedVideoChunkMetadata | undefined
+              if (curVConfig.description !== undefined && (vc.type === 'key' || videoTrackHasConfig === false)) {
+                meta = {
+                  decoderConfig: {
+                    codec: curVConfig.codec,
+                    description: curVConfig.description,
+                    codedWidth: curVConfig.width,
+                    codedHeight: curVConfig.height,
+                  },
+                }
+                videoTrackHasConfig = true
               }
-              videoTrackHasConfig = true
+              muxer.addVideoChunk(
+                new EncodedVideoChunk({
+                  type: vc.type,
+                  timestamp: 输出时间 + relativeTs - 范围起点相对时间,
+                  duration: Math.min(vc.duration, 范围终点相对时间 - relativeTs),
+                  data: vc.data,
+                }),
+                meta,
+              )
             }
-            muxer.addVideoChunk(
-              new EncodedVideoChunk({
-                type: vc.type,
-                timestamp: 输出时间 + relativeTs - 实际起点相对时间,
-                duration: Math.min(vc.duration, 范围终点相对时间 - relativeTs),
-                data: vc.data,
-              }),
-              meta,
-            )
           }
 
           if (audioChunks !== undefined && startATs !== undefined && curAConfig !== undefined) {
             for (let ac of audioChunks) {
               let relativeTs = ac.timestamp - startATs
-              if (relativeTs < 实际起点相对时间 || relativeTs >= 范围终点相对时间) continue
+              if (relativeTs < 范围起点相对时间 || relativeTs >= 范围终点相对时间) continue
               let meta: EncodedAudioChunkMetadata | undefined
               if (curAConfig.description !== undefined && (ac.type === 'key' || audioTrackHasConfig === false)) {
                 meta = {
@@ -284,7 +282,7 @@ export class 视频导出器 {
               muxer.addAudioChunk(
                 new EncodedAudioChunk({
                   type: ac.type,
-                  timestamp: 输出时间 + relativeTs - 实际起点相对时间,
+                  timestamp: 输出时间 + relativeTs - 范围起点相对时间,
                   duration: Math.min(ac.duration, 范围终点相对时间 - relativeTs),
                   data: ac.data,
                 }),
@@ -293,7 +291,7 @@ export class 视频导出器 {
             }
           }
 
-          输出时间 += 实际范围时长
+          输出时间 += 范围终点相对时间 - 范围起点相对时间
         }
       }
 
