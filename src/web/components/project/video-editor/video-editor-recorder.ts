@@ -34,7 +34,7 @@ export class 视频录制器 {
   }
 
   public 是否忙碌(): boolean {
-    return this.阶段 !== '空闲'
+    return this.阶段 !== '空闲' || this.导出器.正在导出
   }
 
   public 获得阶段(): 录制阶段 {

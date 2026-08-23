@@ -31,6 +31,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
   private 当前时间: number = 0
   private 排除片段列表: { start: number; end: number }[] = []
   private 全局最大峰值: number = 0
+  private 已处理实时峰值数: number = 0
 
   private 预览视频: HTMLVideoElement | null = null
   private 预览窗: HTMLElement | null = null
@@ -368,6 +369,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
     try {
       this.峰值数据 = []
+      this.已处理实时峰值数 = 0
       this.真实时长 = 0
       this.当前时间 = 0
       this.排除片段列表 = []
@@ -456,6 +458,7 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
 
   public 设置峰值数据(数据: number[], 样本率: number = 100, 自动适应缩放: boolean = true): void {
     this.峰值数据 = 数据
+    this.已处理实时峰值数 = 数据.length
     this.真实时长 = 数据.length / 样本率
     this.全局最大峰值 = 0
     for (let p of this.峰值数据) {
@@ -468,6 +471,23 @@ export class 视频时间轴组件 extends 组件基类<发出事件类型, 监�
       }
       this.执行缩放(this.当前缩放)
     }
+    this.触发重绘()
+  }
+
+  public 更新实时峰值数据(数据: number[], 样本率: number): void {
+    let 追加起点 = this.峰值数据 === 数据 && this.已处理实时峰值数 <= 数据.length ? this.已处理实时峰值数 : 0
+    if (追加起点 === 0) this.全局最大峰值 = 0
+    for (let i = 追加起点; i < 数据.length; i++) {
+      let 峰值 = 数据[i] ?? 0
+      if (峰值 > this.全局最大峰值) this.全局最大峰值 = 峰值
+    }
+    this.峰值数据 = 数据
+    this.已处理实时峰值数 = 数据.length
+    this.真实时长 = 数据.length / 样本率
+    let 额外宽度 = this.轨道容器?.clientWidth ?? 0
+    let 总宽度 = Math.max(0, this.真实时长) * this.当前缩放 + 额外宽度
+    if (this.内容层 !== null) this.内容层.style.width = `${总宽度}px`
+    if (this.交互层 !== null) this.交互层.style.width = `${总宽度}px`
     this.触发重绘()
   }
 

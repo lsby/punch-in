@@ -28,14 +28,6 @@ let 会话清单Schema = z.object({
 })
 
 export type 录制会话清单 = z.infer<typeof 会话清单Schema>
-export type 存储会话摘要 = {
-  会话ID: string
-  创建时间: number
-  更新时间: number
-  已导出: boolean
-  字节数: number
-  片段数: number
-}
 export type 存储统计 = {
   录制字节数: number
   来源已用字节数: number
@@ -60,6 +52,7 @@ class OPFS录制可写流 {
   private 下一个请求ID = 1
   private 请求列表 = new Map<number, 请求完成函数>()
   private 初始化完成: Promise<void>
+  private 终止错误: Error | null = null
 
   public constructor(会话ID: string, 文件名: string) {
     this.worker.onmessage = (事件: MessageEvent<工作响应>): void => {
@@ -67,12 +60,16 @@ class OPFS录制可写流 {
       if (等待项 === undefined) return
       this.请求列表.delete(事件.data.请求ID)
       if (事件.data.错误 === undefined) 等待项.resolve()
-      else 等待项.reject(new Error(事件.data.错误))
+      else {
+        let 错误 = new Error(事件.data.错误)
+        等待项.reject(错误)
+        this.终止Worker(错误)
+      }
     }
     this.worker.onerror = (事件): void => {
-      for (let 等待项 of this.请求列表.values()) 等待项.reject(new Error(事件.message))
-      this.请求列表.clear()
+      this.终止Worker(new Error(事件.message))
     }
+    this.worker.onmessageerror = (): void => this.终止Worker(new Error('录制存储工作线程返回了无法解析的数据'))
     this.初始化完成 = this.发送请求({ 类型: '初始化', 会话ID, 文件名 })
   }
 
@@ -83,6 +80,7 @@ class OPFS录制可写流 {
       | { 类型: '关闭' }
       | { 类型: '中止' },
   ): Promise<void> {
+    if (this.终止错误 !== null) return Promise.reject(this.终止错误)
     let 请求ID = this.下一个请求ID++
     return new Promise<void>((resolve, reject) => {
       this.请求列表.set(请求ID, { resolve, reject })
@@ -99,19 +97,30 @@ class OPFS录制可写流 {
         await this.发送请求({ 类型: '写入', 位置: 数据块.position, 数据 })
       },
       close: async (): Promise<void> => {
-        await this.初始化完成
-        await this.发送请求({ 类型: '关闭' })
-        this.worker.terminate()
+        try {
+          await this.初始化完成
+          await this.发送请求({ 类型: '关闭' })
+        } finally {
+          this.终止Worker(null)
+        }
       },
       abort: async (): Promise<void> => {
         try {
           await this.初始化完成
           await this.发送请求({ 类型: '中止' })
         } finally {
-          this.worker.terminate()
+          this.终止Worker(null)
         }
       },
     })
+  }
+
+  private 终止Worker(错误: Error | null): void {
+    if (this.终止错误 !== null) return
+    this.终止错误 = 错误 ?? new Error('录制存储工作线程已关闭')
+    for (let 等待项 of this.请求列表.values()) 等待项.reject(this.终止错误)
+    this.请求列表.clear()
+    this.worker.terminate()
   }
 }
 
@@ -119,19 +128,28 @@ export class 视频本地存储 {
   private 根目录: FileSystemDirectoryHandle | null = null
   private 当前清单: 录制会话清单 | null = null
   private 对象URL = new Map<string, string>()
+  private 释放占用锁: (() => void) | null = null
+  private 占用锁任务: Promise<void> | null = null
 
-  public async 初始化(): Promise<{ 片段列表: 视频片段[]; 实时波形数据: number[] }> {
-    this.根目录 = await (
-      await navigator.storage.getDirectory()
-    ).getDirectoryHandle('punch-in-recordings', { create: true })
-    await navigator.storage.persist()
-    let 清单列表 = await this.读取全部清单()
-    this.当前清单 = 清单列表.sort((a, b) => b.更新时间 - a.更新时间)[0] ?? this.创建空清单()
-    await this.恢复进行中片段()
-    await this.保存清单()
-    return {
-      片段列表: await this.构建运行时片段(this.当前清单.片段列表),
-      实时波形数据: [...this.当前清单.实时波形数据],
+  public async 初始化(): Promise<{ 片段列表: 视频片段[]; 实时波形数据: number[]; 恢复提示: string | null }> {
+    await this.获得占用锁()
+    try {
+      this.根目录 = await (
+        await navigator.storage.getDirectory()
+      ).getDirectoryHandle('punch-in-recordings', { create: true })
+      await navigator.storage.persist()
+      let 清单列表 = await this.读取全部清单()
+      this.当前清单 = 清单列表.sort((a, b) => b.更新时间 - a.更新时间)[0] ?? this.创建空清单()
+      let 恢复提示 = await this.恢复进行中片段()
+      await this.保存清单()
+      return {
+        片段列表: await this.构建运行时片段(this.当前清单.片段列表),
+        实时波形数据: [...this.当前清单.实时波形数据],
+        恢复提示,
+      }
+    } catch (错误) {
+      await this.关闭()
+      throw 错误
     }
   }
 
@@ -270,46 +288,6 @@ export class 视频本地存储 {
     }
   }
 
-  public async 获得会话列表(): Promise<存储会话摘要[]> {
-    let 清单列表 = await this.读取全部清单()
-    let 结果: 存储会话摘要[] = []
-    for (let 清单 of 清单列表) {
-      let 会话目录 = await this.获得根目录().getDirectoryHandle(清单.会话ID)
-      let 字节数 = await this.计算录制文件大小(会话目录)
-      if (字节数 === 0 && 清单.片段列表.length === 0 && 清单.进行中片段 === undefined) continue
-      结果.push({
-        会话ID: 清单.会话ID,
-        创建时间: 清单.创建时间,
-        更新时间: 清单.更新时间,
-        已导出: 清单.已导出,
-        字节数,
-        片段数: 清单.片段列表.length,
-      })
-    }
-    return 结果.sort((a, b) => b.更新时间 - a.更新时间)
-  }
-
-  public async 删除会话(会话ID: string): Promise<boolean> {
-    let 是否当前 = this.当前清单?.会话ID === 会话ID
-    this.释放会话URL(会话ID)
-    await this.获得根目录().removeEntry(会话ID, { recursive: true })
-    if (是否当前) {
-      this.当前清单 = this.创建空清单()
-      await this.保存清单()
-    }
-    return 是否当前
-  }
-
-  public async 删除已导出会话(): Promise<boolean> {
-    let 清单列表 = await this.读取全部清单()
-    let 删除了当前 = false
-    for (let 清单 of 清单列表) {
-      if (清单.已导出 === false) continue
-      if (await this.删除会话(清单.会话ID)) 删除了当前 = true
-    }
-    return 删除了当前
-  }
-
   public async 删除全部会话(): Promise<void> {
     let 根目录 = this.获得根目录()
     for await (let [名称] of 根目录.entries()) await 根目录.removeEntry(名称, { recursive: true })
@@ -321,6 +299,16 @@ export class 视频本地存储 {
   public 释放全部URL(): void {
     for (let url of this.对象URL.values()) URL.revokeObjectURL(url)
     this.对象URL.clear()
+  }
+
+  public async 关闭(): Promise<void> {
+    this.释放全部URL()
+    let 释放 = this.释放占用锁
+    let 任务 = this.占用锁任务
+    this.释放占用锁 = null
+    this.占用锁任务 = null
+    释放?.()
+    if (任务 !== null) await 任务
   }
 
   private async 构建运行时片段(片段列表: 持久视频片段[]): Promise<视频片段[]> {
@@ -386,9 +374,10 @@ export class 视频本地存储 {
     return 结果
   }
 
-  private async 恢复进行中片段(): Promise<void> {
-    if (this.当前清单?.进行中片段 === undefined) return
+  private async 恢复进行中片段(): Promise<string | null> {
+    if (this.当前清单?.进行中片段 === undefined) return null
     let 进行中 = this.当前清单.进行中片段
+    let 是否恢复 = false
     try {
       let 文件 = await this.获得文件(this.当前清单.会话ID, 进行中.文件名)
       if (文件.size > 0) {
@@ -416,11 +405,53 @@ export class 视频本地存储 {
             while (新波形数据.length < Math.floor((进行中.start + duration) * 100)) 新波形数据.push(0)
           }
           this.当前清单.实时波形数据 = 新波形数据.slice(0, Math.floor((进行中.start + duration) * 100))
+          是否恢复 = true
         }
       }
-    } catch (_错误) {}
+    } catch (错误) {
+      console.error('自动恢复上次录制失败', 错误)
+    }
+    if (是否恢复 === false) {
+      let 会话目录 = await this.获得根目录().getDirectoryHandle(this.当前清单.会话ID)
+      try {
+        await 会话目录.removeEntry(进行中.文件名)
+      } catch (_错误) {}
+    }
     this.当前清单.进行中片段 = undefined
     this.当前清单.更新时间 = Date.now()
+    return 是否恢复
+      ? '检测到上次未完成收尾的录制，已自动恢复有效内容。'
+      : '上次录制未完整保存且无法恢复，已删除无效片段。'
+  }
+
+  private async 获得占用锁(): Promise<void> {
+    let 通知结果: ((是否获得: boolean) => void) | null = null
+    let 获得结果 = new Promise<boolean>((resolve) => {
+      通知结果 = resolve
+    })
+    let 等待释放 = new Promise<void>((resolve) => {
+      this.释放占用锁 = resolve
+    })
+    this.占用锁任务 = navigator.locks.request<void>(
+      'punch-in-recordings:editor',
+      { mode: 'exclusive', ifAvailable: true },
+      async (锁) => {
+        let 通知 = 通知结果
+        if (通知 === null) throw new Error('录制存储锁状态异常')
+        if (锁 === null) {
+          通知(false)
+          return
+        }
+        通知(true)
+        await 等待释放
+      },
+    )
+    if ((await 获得结果) === true) return
+    let 任务 = this.占用锁任务
+    this.占用锁任务 = null
+    this.释放占用锁 = null
+    await 任务
+    throw new Error('录制页面已在另一个标签页中打开，请关闭另一个页面后重试')
   }
 
   private async 计算录制文件大小(目录: FileSystemDirectoryHandle): Promise<number> {
@@ -456,14 +487,6 @@ export class 视频本地存储 {
       return 结果
     } finally {
       输入.dispose()
-    }
-  }
-
-  private 释放会话URL(会话ID: string): void {
-    for (let [键, url] of this.对象URL.entries()) {
-      if (键.startsWith(`${会话ID}/`) === false) continue
-      URL.revokeObjectURL(url)
-      this.对象URL.delete(键)
     }
   }
 }

@@ -199,10 +199,14 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     容器.append(按钮集.控制栏, 中部区域)
     this.shadow.append(容器)
 
-    let 恢复状态 = await this.本地存储.初始化()
+    let 恢复状态 = await this.本地存储.初始化().catch((错误: unknown) => {
+      alert(`本地录制存储初始化失败：${String(错误)}`)
+      throw 错误
+    })
     this.录制器.切片列表 = 恢复状态.片段列表
     this.录制器.实时波形数据 = 恢复状态.实时波形数据
     this.应用状态({ 切片列表: 恢复状态.片段列表, 实时波形数据: 恢复状态.实时波形数据 })
+    if (恢复状态.恢复提示 !== null) alert(恢复状态.恢复提示)
     await this.清理未引用片段()
     await this.刷新存储状态()
     this.存储刷新定时器 = window.setInterval((): void => {
@@ -236,7 +240,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
 
     按钮集.存储按钮.onclick = async (): Promise<void> => {
-      await 显示存储管理面板(this.本地存储, this.录制器.获得预计每秒字节数(), {
+      await 显示存储管理面板(this.本地存储, {
         是否允许删除: (): boolean => this.录制器.是否忙碌() === false,
         当前会话已删除: async (): Promise<void> => {
           this.历史栈 = []
@@ -338,7 +342,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
           提取波形样本: (): number[] => this.音频分析器.提取波形样本(),
           同步时间轴: (波形数据, 采样率, 当前时间): void => {
-            this.时间轴组件?.设置峰值数据(波形数据, 采样率, false)
+            this.时间轴组件?.更新实时峰值数据(波形数据, 采样率)
             this.时间轴组件?.同步进度(当前时间)
           },
           录制完成: async (新切片列表, 波形数据, 结束时间): Promise<void> => {
@@ -384,10 +388,10 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     this.存储刷新定时器 = null
     try {
       if (this.录制器.是否正在录制()) await this.录制器.停止()
-      else if (this.录制器.是否忙碌()) await this.录制器.取消()
+      else if (this.录制器.获得阶段() !== '空闲') await this.录制器.取消()
     } finally {
       await this.停止媒体采集()
-      this.本地存储.释放全部URL()
+      await this.本地存储.关闭()
     }
   }
 

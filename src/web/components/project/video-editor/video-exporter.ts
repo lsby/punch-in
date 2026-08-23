@@ -144,20 +144,31 @@ export class 视频导出器 {
     this.当前录制 = null
     当前.视频源.close()
     当前.音频源?.close()
+    let 收尾错误: Error | null = null
     try {
       await 当前.输出.finalize()
-      let 文件 = await this.本地存储.获得文件(this.本地存储.获得当前会话ID(), 当前.文件名)
-      let 输入 = new Input({ formats: ALL_FORMATS, source: new BlobSource(文件) })
-      try {
-        let duration = await 输入.computeDuration()
-        if (Number.isFinite(duration) === false || duration <= 0) throw new Error('录制文件没有有效时长')
-        return { id: 当前.id, 文件名: 当前.文件名, duration, 字节数: 文件.size, 警告: 当前.错误 }
-      } finally {
-        输入.dispose()
-      }
     } catch (错误) {
+      收尾错误 = 错误 instanceof Error ? 错误 : new Error(String(错误))
+    }
+    try {
+      let 警告 = 收尾错误 === null ? 当前.错误 : new Error(`录制收尾失败，但已自动恢复落盘内容：${收尾错误.message}`)
+      return await this.读取录制文件结果(当前, 警告)
+    } catch (恢复错误) {
       await this.本地存储.放弃片段(当前.id, 当前.文件名)
-      throw 错误
+      if (收尾错误 === null) throw 恢复错误
+      throw new Error(`录制收尾失败，落盘内容也无法恢复，已删除无效片段：${收尾错误.message}`)
+    }
+  }
+
+  private async 读取录制文件结果(当前: 当前录制, 警告: Error | null): Promise<录制文件结果> {
+    let 文件 = await this.本地存储.获得文件(this.本地存储.获得当前会话ID(), 当前.文件名)
+    let 输入 = new Input({ formats: ALL_FORMATS, source: new BlobSource(文件) })
+    try {
+      let duration = await 输入.computeDuration()
+      if (Number.isFinite(duration) === false || duration <= 0) throw new Error('录制文件没有有效时长')
+      return { id: 当前.id, 文件名: 当前.文件名, duration, 字节数: 文件.size, 警告 }
+    } finally {
+      输入.dispose()
     }
   }
 
