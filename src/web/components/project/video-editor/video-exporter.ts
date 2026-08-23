@@ -12,7 +12,6 @@ import {
   Output,
   Quality,
   StreamTarget,
-  StreamTargetChunk,
   canEncodeAudio,
   canEncodeVideo,
 } from 'mediabunny'
@@ -35,11 +34,18 @@ type 当前录制 = {
   统计: { 编码字节数: number; 开始时间: number }
 }
 
-type 输入轨道信息 = { 视频编码: 'avc' | null; 音频编码: 'aac' | null }
+type 输入轨道信息 = {
+  视频编码: 'avc' | null
+  音频编码: 'aac' | null
+  视频配置: VideoDecoderConfig | null
+  音频配置: AudioDecoderConfig | null
+}
+type 视频尺寸 = { width: number; height: number }
 
 export class 视频导出器 {
   private 当前录制: 当前录制 | null = null
   private 本地存储: 视频本地存储
+  private 录制视频尺寸: 视频尺寸 | null = null
 
   public 正在导出 = false
 
@@ -47,15 +53,22 @@ export class 视频导出器 {
     this.本地存储 = 本地存储
   }
 
-  public async 开始录制(stream: MediaStream, 时间轴起点: number): Promise<void> {
+  public async 开始录制(stream: MediaStream, 时间轴起点: number, 现有片段列表: 视频片段[]): Promise<void> {
     if (this.当前录制 !== null) throw new Error('上一段录制尚未完成收尾')
     let 视频轨道 = stream.getVideoTracks()[0]
     if (视频轨道 === undefined) throw new Error('没有可录制的视频轨道')
     let 设置 = 视频轨道.getSettings()
+    if (this.录制视频尺寸 === null) {
+      this.录制视频尺寸 = (await this.获得现有视频尺寸(现有片段列表)) ?? {
+        width: this.规范视频尺寸(设置.width ?? 1920),
+        height: this.规范视频尺寸(设置.height ?? 1080),
+      }
+    }
+    let 录制视频尺寸 = this.录制视频尺寸
     let 统计 = { 编码字节数: 0, 开始时间: performance.now() }
     let 视频质量 = new Quality({ bitrate: 10_000_000, bitrateMode: 'variable' })
     if (
-      (await canEncodeVideo('avc', { width: 设置.width ?? 1920, height: 设置.height ?? 1080, quality: 视频质量 })) ===
+      (await canEncodeVideo('avc', { width: 录制视频尺寸.width, height: 录制视频尺寸.height, quality: 视频质量 })) ===
       false
     ) {
       throw new Error('当前浏览器不支持将此画面编码为 H.264')
@@ -83,8 +96,8 @@ export class 视频导出器 {
       {
         codec: 'avc',
         quality: 视频质量,
-        keyFrameInterval: 1,
-        sizeChangeBehavior: 'contain',
+        keyFrameInterval: 0,
+        transform: { width: 录制视频尺寸.width, height: 录制视频尺寸.height, fit: 'contain' },
         contentHint: 'detail',
         onEncodedPacket: (packet): void => {
           统计.编码字节数 += packet.byteLength
@@ -177,19 +190,18 @@ export class 视频导出器 {
     if (切片列表.length === 0) throw new Error('没有可以导出的片段')
     if (this.正在导出) throw new Error('已有导出任务正在进行')
     this.正在导出 = true
-    配置.进度回调?.({ 进度: 0.01, 阶段: '正在选择保存位置' })
+    配置.进度回调?.({ 进度: 0.01, 阶段: '正在准备临时导出文件' })
     let 临时文件名 = `export-${crypto.randomUUID()}.mp4`
-    let 输出流事件 = this.创建导出输出流(临时文件名, `${配置.文件名}.mp4`)
+    let 输出: Output<Mp4OutputFormat, StreamTarget> | null = null
     try {
       let 轨道信息 = await this.读取轨道信息(切片列表)
       配置.进度回调?.({ 进度: 0.04, 阶段: '正在分析录制片段' })
       if (轨道信息.视频编码 === null) throw new Error('未发现有效的视频轨道')
       let 视频源 = new EncodedVideoPacketSource(轨道信息.视频编码)
       let 音频源 = 轨道信息.音频编码 === null ? null : new EncodedAudioPacketSource(轨道信息.音频编码)
-      let 输出流 = await 输出流事件
-      let 输出 = new Output({
+      输出 = new Output({
         format: new Mp4OutputFormat({ fastStart: false }),
-        target: new StreamTarget(输出流, { chunked: true }),
+        target: new StreamTarget(this.本地存储.创建导出可写流(临时文件名), { chunked: true }),
       })
       输出.addVideoTrack(视频源)
       if (音频源 !== null) 输出.addAudioTrack(音频源)
@@ -259,42 +271,31 @@ export class 视频导出器 {
       音频源?.close()
       配置.进度回调?.({ 进度: 0.96, 阶段: '正在完成 MP4 文件' })
       await 输出.finalize()
+      配置.进度回调?.({ 进度: 0.98, 阶段: '正在选择保存位置' })
+      await this.本地存储.保存并删除临时导出文件(临时文件名, `${配置.文件名}.mp4`)
       await this.本地存储.标记已导出()
       配置.进度回调?.({ 进度: 1, 阶段: '导出完成，文件已保存' })
+    } catch (错误) {
+      if (输出?.state === 'finalizing') 输出.state = 'started'
+      if (输出 !== null && 输出.state !== 'canceled' && 输出.state !== 'finalized') {
+        try {
+          await 输出.cancel()
+        } catch (取消错误) {
+          console.error('取消失败的导出任务时发生错误', 取消错误)
+        }
+      }
+      await this.本地存储.删除临时导出文件(临时文件名)
+      throw 错误
     } finally {
       this.正在导出 = false
     }
   }
 
-  private async 创建导出输出流(临时文件名: string, 下载文件名: string): Promise<WritableStream<StreamTargetChunk>> {
-    if (window.showSaveFilePicker !== undefined) {
-      let 文件句柄 = await window.showSaveFilePicker({
-        suggestedName: 下载文件名,
-        types: [{ description: 'MP4 视频', accept: { 'video/mp4': ['.mp4'] } }],
-      })
-      let 文件流 = await 文件句柄.createWritable()
-      return new WritableStream<StreamTargetChunk>({
-        write: async (数据块): Promise<void> =>
-          文件流.write({ type: 'write', position: 数据块.position, data: 数据块.data }),
-        close: async (): Promise<void> => 文件流.close(),
-        abort: async (原因): Promise<void> => 文件流.abort(原因),
-      })
-    }
-    let 流 = this.本地存储.创建导出可写流(临时文件名)
-    let 写入器 = 流.getWriter()
-    return new WritableStream<StreamTargetChunk>({
-      write: async (数据块): Promise<void> => 写入器.write(数据块),
-      close: async (): Promise<void> => {
-        await 写入器.close()
-        await this.本地存储.下载并删除临时导出文件(临时文件名, 下载文件名)
-      },
-      abort: async (原因): Promise<void> => 写入器.abort(原因),
-    })
-  }
-
   private async 读取轨道信息(切片列表: 视频片段[]): Promise<输入轨道信息> {
     let 视频编码: 输入轨道信息['视频编码'] = null
     let 音频编码: 输入轨道信息['音频编码'] = null
+    let 视频配置: VideoDecoderConfig | null = null
+    let 音频配置: AudioDecoderConfig | null = null
     for (let 片段 of 切片列表) {
       let 输入 = new Input({
         formats: ALL_FORMATS,
@@ -305,14 +306,27 @@ export class 视频导出器 {
         let 音频轨道 = await 输入.getPrimaryAudioTrack()
         let 当前视频编码 = 视频轨道 === null ? null : await 视频轨道.getCodec()
         let 当前音频编码 = 音频轨道 === null ? null : await 音频轨道.getCodec()
+        let 当前视频配置 = 视频轨道 === null ? null : await 视频轨道.getDecoderConfig()
+        let 当前音频配置 = 音频轨道 === null ? null : await 音频轨道.getDecoderConfig()
         if (视频编码 === null && 当前视频编码 === 'avc') 视频编码 = 当前视频编码
         if (音频编码 === null && 当前音频编码 === 'aac') 音频编码 = 当前音频编码
+        if (当前视频配置 !== null) {
+          if (视频配置 === null) 视频配置 = 当前视频配置
+          else if (this.视频配置兼容(视频配置, 当前视频配置) === false) {
+            throw new Error('录制片段的视频尺寸或编码配置不一致，无法无损封装；请使用同一录制画布重新录制这些片段')
+          }
+        }
+        if (当前音频配置 !== null) {
+          if (音频配置 === null) 音频配置 = 当前音频配置
+          else if (this.音频配置兼容(音频配置, 当前音频配置) === false) {
+            throw new Error('录制片段的音频采样配置不一致，无法无损封装')
+          }
+        }
       } finally {
         输入.dispose()
       }
-      if (视频编码 !== null && 音频编码 !== null) break
     }
-    return { 视频编码, 音频编码 }
+    return { 视频编码, 音频编码, 视频配置, 音频配置 }
   }
 
   private async 获得下一个关键帧(sink: EncodedPacketSink, 起点: number): Promise<EncodedPacket | null> {
@@ -321,7 +335,64 @@ export class 视频导出器 {
     while (关键帧 !== null && 关键帧.timestamp < 起点 - 0.000_001) {
       关键帧 = await sink.getNextKeyPacket(关键帧, { verifyKeyPackets: true })
     }
+    if (关键帧 !== null && 关键帧.timestamp - 起点 > 0.1) {
+      throw new Error('当前片段使用旧版稀疏关键帧录制，裁剪点无法精确对齐；为避免静默丢失内容，已停止导出')
+    }
     return 关键帧
+  }
+
+  private 规范视频尺寸(值: number): number {
+    let 整数 = Math.max(2, Math.floor(值))
+    return 整数 % 2 === 0 ? 整数 : 整数 - 1
+  }
+
+  private 视频配置兼容(左: VideoDecoderConfig, 右: VideoDecoderConfig): boolean {
+    return (
+      左.codec === 右.codec &&
+      左.codedWidth === 右.codedWidth &&
+      左.codedHeight === 右.codedHeight &&
+      this.二进制配置相同(左.description, 右.description)
+    )
+  }
+
+  private 音频配置兼容(左: AudioDecoderConfig, 右: AudioDecoderConfig): boolean {
+    return (
+      左.codec === 右.codec &&
+      左.sampleRate === 右.sampleRate &&
+      左.numberOfChannels === 右.numberOfChannels &&
+      this.二进制配置相同(左.description, 右.description)
+    )
+  }
+
+  private 二进制配置相同(左: AllowSharedBufferSource | undefined, 右: AllowSharedBufferSource | undefined): boolean {
+    if (左 === undefined || 右 === undefined) return 左 === 右
+    let 左字节 = this.转换字节视图(左)
+    let 右字节 = this.转换字节视图(右)
+    if (左字节.byteLength !== 右字节.byteLength) return false
+    for (let i = 0; i < 左字节.byteLength; i++) if (左字节[i] !== 右字节[i]) return false
+    return true
+  }
+
+  private 转换字节视图(数据: AllowSharedBufferSource): Uint8Array<ArrayBufferLike> {
+    if (ArrayBuffer.isView(数据)) return new Uint8Array(数据.buffer, 数据.byteOffset, 数据.byteLength)
+    return new Uint8Array(数据)
+  }
+
+  private async 获得现有视频尺寸(片段列表: 视频片段[]): Promise<视频尺寸 | null> {
+    let 首个片段 = 片段列表[0]
+    if (首个片段 === undefined) return null
+    let 输入 = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(await this.本地存储.获得文件(首个片段.会话ID, 首个片段.文件名)),
+    })
+    try {
+      let 视频轨道 = await 输入.getPrimaryVideoTrack()
+      let 配置 = 视频轨道 === null ? null : await 视频轨道.getDecoderConfig()
+      if (配置?.codedWidth === undefined || 配置.codedHeight === undefined) return null
+      return { width: this.规范视频尺寸(配置.codedWidth), height: this.规范视频尺寸(配置.codedHeight) }
+    } finally {
+      输入.dispose()
+    }
   }
 
   private async 写入视频范围(

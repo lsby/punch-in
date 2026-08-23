@@ -53,7 +53,7 @@ export class 视频录制器 {
     回调.提取波形样本()
 
     try {
-      await this.导出器.开始录制(媒体流, this.穿插起点时间)
+      await this.导出器.开始录制(媒体流, this.穿插起点时间, this.切片列表)
       回调.提取波形样本()
       let 保留的波形长度 = Math.floor(this.穿插起点时间 * 100)
       if (this.实时波形数据.length > 保留的波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 保留的波形长度)

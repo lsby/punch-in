@@ -32,6 +32,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
   private 当前媒体流: MediaStream | null = null
   private 当前音频轨道来源: 音频轨道来源 = { 桌面音频轨道: null, 麦克风轨道: null }
+  private 是否录制麦克风 = false
   private 本地存储 = new 视频本地存储()
   private 录制器 = new 视频录制器(this.本地存储)
   private 音频分析器 = new 视频音频分析器()
@@ -270,7 +271,6 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       try {
         let stream: MediaStream
         let 桌面音频轨道: MediaStreamTrack | null = null
-        let 麦克风轨道: MediaStreamTrack | null = null
         if (window.electronAPI?.获取屏幕列表 !== undefined) {
           let 结果 = await 弹出Electron屏幕选择()
           if (结果 === null) return
@@ -280,17 +280,16 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           }
           stream = await navigator.mediaDevices.getUserMedia(constraints)
           桌面音频轨道 = stream.getAudioTracks()[0] ?? null
-          if (结果.录制麦克风) 麦克风轨道 = await this.获取麦克风轨道()
+          this.是否录制麦克风 = 结果.录制麦克风
         } else {
           let 设置 = await 弹出浏览器采集设置()
           if (设置 === null) return
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: 设置.录制系统音频 })
           桌面音频轨道 = stream.getAudioTracks()[0] ?? null
-          if (设置.录制麦克风) 麦克风轨道 = await this.获取麦克风轨道()
+          this.是否录制麦克风 = 设置.录制麦克风
         }
-        if (麦克风轨道 !== null) stream.addTrack(麦克风轨道)
         this.当前媒体流 = stream
-        this.当前音频轨道来源 = { 桌面音频轨道, 麦克风轨道 }
+        this.当前音频轨道来源 = { 桌面音频轨道, 麦克风轨道: null }
         let 视频轨道 = stream.getVideoTracks()[0]
         if (视频轨道 !== undefined) {
           视频轨道.onended = (): void => {
@@ -329,10 +328,11 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         return
       }
       this.保存历史()
-      let 混音流 = this.音频分析器.获得混音后的流(this.当前媒体流)
       按钮集.录制按钮.disabled = true
       按钮集.录制按钮.textContent = '正在启动'
       try {
+        await this.启动麦克风采集()
+        let 混音流 = this.音频分析器.获得混音后的流(this.当前媒体流)
         this.预览组件?.设置视频流(this.当前媒体流)
         await this.录制器.开始录制(混音流, {
           获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
@@ -342,6 +342,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
             this.时间轴组件?.同步进度(当前时间)
           },
           录制完成: async (新切片列表, 波形数据, 结束时间): Promise<void> => {
+            await this.停止麦克风采集()
             this.预览组件?.设置视频流(null)
             this.预览组件?.设置播放列表(新切片列表)
             this.时间轴组件?.设置播放列表(新切片列表)
@@ -353,11 +354,16 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
             }, 50)
             await this.清理未引用片段()
           },
-          录制错误: (错误): void => alert(`录制失败: ${错误.message}`),
+          录制错误: (错误): void => {
+            void this.停止麦克风采集().catch((停止错误: unknown): void => console.error('停止麦克风采集失败', 停止错误))
+            this.设置录制按钮状态(false)
+            alert(`录制失败: ${错误.message}`)
+          },
         })
         this.设置录制按钮状态(true)
       } catch (错误) {
         this.历史栈.pop()
+        await this.停止麦克风采集()
         this.设置录制按钮状态(false)
         alert(`开始录制失败: ${String(错误)}`)
       }
@@ -385,13 +391,42 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
   }
 
-  private async 获取麦克风轨道(): Promise<MediaStreamTrack | null> {
+  private async 获取麦克风轨道(): Promise<MediaStreamTrack> {
     try {
       let 麦克风流 = await navigator.mediaDevices.getUserMedia({ audio: true })
-      return 麦克风流.getAudioTracks()[0] ?? null
+      let 麦克风轨道 = 麦克风流.getAudioTracks()[0]
+      if (麦克风轨道 === undefined) throw new Error('没有可用的麦克风音轨')
+      return 麦克风轨道
     } catch (错误) {
-      console.warn('获取麦克风失败或未授权', 错误)
-      return null
+      throw new Error(`获取麦克风失败或未授权: ${String(错误)}`)
+    }
+  }
+
+  private async 启动麦克风采集(): Promise<void> {
+    if (this.是否录制麦克风 === false || this.当前媒体流 === null || this.当前音频轨道来源.麦克风轨道 !== null) return
+    let 麦克风轨道 = await this.获取麦克风轨道()
+    this.当前媒体流.addTrack(麦克风轨道)
+    this.当前音频轨道来源 = { ...this.当前音频轨道来源, 麦克风轨道 }
+    try {
+      await this.音频分析器.启动(this.当前音频轨道来源)
+    } catch (错误) {
+      this.当前媒体流.removeTrack(麦克风轨道)
+      麦克风轨道.stop()
+      this.当前音频轨道来源 = { ...this.当前音频轨道来源, 麦克风轨道: null }
+      throw 错误
+    }
+  }
+
+  private async 停止麦克风采集(): Promise<void> {
+    let 麦克风轨道 = this.当前音频轨道来源.麦克风轨道
+    if (麦克风轨道 === null) return
+    this.当前媒体流?.removeTrack(麦克风轨道)
+    麦克风轨道.stop()
+    this.当前音频轨道来源 = { ...this.当前音频轨道来源, 麦克风轨道: null }
+    try {
+      await this.音频分析器.启动(this.当前音频轨道来源)
+    } catch (错误) {
+      console.error('恢复桌面音频分析失败', 错误)
     }
   }
 
@@ -405,6 +440,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
     let stream = this.当前媒体流
     this.当前媒体流 = null
+    this.是否录制麦克风 = false
     this.当前音频轨道来源 = { 桌面音频轨道: null, 麦克风轨道: null }
     if (stream !== null) {
       for (let track of stream.getTracks()) {
@@ -414,6 +450,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     }
     await this.音频分析器.停止()
     this.预览组件?.设置视频流(null)
+    this.设置录制按钮状态(false)
     if (this.录制器.切片列表.length > 0) this.预览组件?.设置播放列表(this.录制器.切片列表)
     let 按钮 = this.控制栏按钮?.选择屏幕按钮
     if (按钮 !== undefined) {

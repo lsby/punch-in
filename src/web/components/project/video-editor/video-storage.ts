@@ -226,8 +226,17 @@ export class 视频本地存储 {
     return new OPFS录制可写流(this.获得当前会话ID(), 文件名).创建流()
   }
 
-  public async 下载并删除临时导出文件(文件名: string, 下载文件名: string): Promise<void> {
+  public async 保存并删除临时导出文件(文件名: string, 下载文件名: string): Promise<void> {
     let 文件 = await this.获得文件(this.获得当前会话ID(), 文件名)
+    if (window.showSaveFilePicker !== undefined) {
+      let 文件句柄 = await window.showSaveFilePicker({
+        suggestedName: 下载文件名,
+        types: [{ description: 'MP4 视频', accept: { 'video/mp4': ['.mp4'] } }],
+      })
+      await 文件.stream().pipeTo(await 文件句柄.createWritable())
+      await this.删除临时导出文件(文件名)
+      return
+    }
     let url = URL.createObjectURL(文件)
     let 下载元素 = document.createElement('a')
     下载元素.href = url
@@ -235,13 +244,15 @@ export class 视频本地存储 {
     下载元素.click()
     setTimeout((): void => {
       URL.revokeObjectURL(url)
-      void (async (): Promise<void> => {
-        try {
-          let 会话目录 = await this.获得根目录().getDirectoryHandle(this.获得当前会话ID())
-          await 会话目录.removeEntry(文件名)
-        } catch (_错误) {}
-      })()
+      void this.删除临时导出文件(文件名)
     }, 60_000)
+  }
+
+  public async 删除临时导出文件(文件名: string): Promise<void> {
+    try {
+      let 会话目录 = await this.获得根目录().getDirectoryHandle(this.获得当前会话ID())
+      await 会话目录.removeEntry(文件名)
+    } catch (_错误) {}
   }
 
   public async 获得统计(): Promise<存储统计> {
@@ -395,6 +406,16 @@ export class 视频本地存储 {
             字节数: 文件.size,
           }
           this.当前清单.片段列表 = [...this.截断片段(this.当前清单.片段列表, 进行中.start), 新片段]
+          let 保留波形长度 = Math.floor(进行中.start * 100)
+          let 新波形数据 = this.当前清单.实时波形数据.slice(0, 保留波形长度)
+          while (新波形数据.length < 保留波形长度) 新波形数据.push(0)
+          try {
+            新波形数据 = 新波形数据.concat(await this.生成文件波形(文件, duration, 100))
+          } catch (错误) {
+            console.error('恢复录制片段的波形失败，将使用静音波形', 错误)
+            while (新波形数据.length < Math.floor((进行中.start + duration) * 100)) 新波形数据.push(0)
+          }
+          this.当前清单.实时波形数据 = 新波形数据.slice(0, Math.floor((进行中.start + duration) * 100))
         }
       }
     } catch (_错误) {}
@@ -409,6 +430,33 @@ export class 视频本地存储 {
       else if (是目录句柄(句柄)) 结果 += await this.计算录制文件大小(句柄)
     }
     return 结果
+  }
+
+  private async 生成文件波形(文件: File, duration: number, 每秒采样数: number): Promise<number[]> {
+    let { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import('mediabunny')
+    let 输入 = new Input({ formats: ALL_FORMATS, source: new BlobSource(文件) })
+    let 目标长度 = Math.floor(duration * 每秒采样数)
+    let 结果 = new Array<number>(目标长度).fill(0)
+    try {
+      let 音频轨道 = await 输入.getPrimaryAudioTrack()
+      if (音频轨道 === null) return 结果
+      let sink = new AudioBufferSink(音频轨道)
+      for await (let 包装音频 of sink.buffers(0, duration)) {
+        let buffer = 包装音频.buffer
+        for (let 声道 = 0; 声道 < buffer.numberOfChannels; 声道++) {
+          let 数据 = buffer.getChannelData(声道)
+          for (let i = 0; i < 数据.length; i++) {
+            let 索引 = Math.floor((包装音频.timestamp + i / buffer.sampleRate) * 每秒采样数)
+            if (索引 < 0 || 索引 >= 结果.length) continue
+            let 音量 = Math.abs(数据[i] ?? 0)
+            if (音量 > (结果[索引] ?? 0)) 结果[索引] = 音量
+          }
+        }
+      }
+      return 结果
+    } finally {
+      输入.dispose()
+    }
   }
 
   private 释放会话URL(会话ID: string): void {

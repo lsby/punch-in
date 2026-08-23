@@ -13,7 +13,7 @@ export async function 弹出Electron屏幕选择(): Promise<屏幕选择结果 |
     let 屏幕列表 = await api.获取屏幕列表()
     let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } })
     let 录制音频开关 = new 切换开关({ 标签: '录制系统音频', 值: true })
-    let 录制麦克风开关 = new 切换开关({ 标签: '录制麦克风', 值: true })
+    let 录制麦克风开关 = new 切换开关({ 标签: '录制麦克风', 值: false })
     let 内容容器 = 创建元素('div', {
       style: {
         display: 'flex',
@@ -91,7 +91,7 @@ export async function 弹出浏览器采集设置(): Promise<浏览器采集设�
   return new Promise((resolve) => {
     let 容器 = 创建元素('div', { style: { padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' } })
     let 系统音频 = new 切换开关({ 标签: '录制系统音频', 值: true })
-    let 麦克风 = new 切换开关({ 标签: '录制麦克风', 值: true })
+    let 麦克风 = new 切换开关({ 标签: '录制麦克风', 值: false })
     let 继续按钮 = new 主要按钮({
       文本: '继续选择屏幕',
       点击处理函数: async (): Promise<void> => {
