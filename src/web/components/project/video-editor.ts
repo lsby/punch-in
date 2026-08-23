@@ -1,7 +1,6 @@
 import { 组件基类 } from '../../base/base'
 import { 主要按钮, 文本按钮 } from '../../components/general/base/base-button'
 import { 普通输入框 } from '../../components/general/form/form-input'
-import { 单选框组 } from '../../components/general/form/form-radio-group'
 import { 切换开关 } from '../../components/general/form/form-switch'
 import { 关闭模态框, 显示模态框 } from '../../global/manager/modal-manager'
 import { 创建元素 } from '../../global/tools/create-element'
@@ -9,6 +8,7 @@ import { 视频混音器组件 } from './video-editor/video-audio-mixer'
 import { 视频音频分析器 } from './video-editor/video-editor-audio'
 import { 视频录制器 } from './video-editor/video-editor-recorder'
 import { 创建规则面板 } from './video-editor/video-editor-rule-panel'
+import { 裁剪规则 } from './video-editor/video-editor-types'
 import { 创建控制栏 } from './video-editor/video-editor-ui'
 import { 计算排除片段 } from './video-editor/video-editor-utils'
 import { 导出配置 } from './video-editor/video-exporter'
@@ -33,6 +33,8 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
   private 历史栈: { 切片列表: 视频片段[]; 实时波形数据: number[] }[] = []
   private 重做栈: { 切片列表: 视频片段[]; 实时波形数据: number[] }[] = []
+  private 当前规则列表: 裁剪规则[] = []
+  private 当前排除片段: { start: number; end: number }[] = []
 
   private async 弹出屏幕选择(): Promise<string | null> {
     let api = window.electronAPI
@@ -137,6 +139,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     this.预览组件?.设置播放列表(this.录制器.切片列表)
     this.时间轴组件?.设置播放列表(this.录制器.切片列表)
     this.时间轴组件?.设置峰值数据(this.录制器.实时波形数据, 100, false)
+    this.重新计算排除片段()
 
     // 跳转到最后一段的末尾，或者 0
     let 结束时间 = 0
@@ -164,6 +167,17 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       this.历史栈.push({ 切片列表: structuredClone(this.录制器.切片列表), 实时波形数据: [...this.录制器.实时波形数据] })
       this.应用状态(状态)
     }
+  }
+
+  private 重新计算排除片段(): void {
+    let 峰值数据 = this.时间轴组件?.获取峰值数据()
+    if (峰值数据 === null || 峰值数据 === undefined || 峰值数据.length === 0) {
+      this.当前排除片段 = []
+    } else {
+      this.当前排除片段 = 计算排除片段(峰值数据.length / 100, 峰值数据, 100, this.当前规则列表)
+    }
+    this.时间轴组件?.设置排除片段(this.当前排除片段)
+    this.预览组件?.设置排除片段(this.当前排除片段)
   }
 
   protected override async 当加载时(): Promise<void> {
@@ -229,16 +243,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
     // 规则面板 (放在右侧)
     let 规则面板包装 = 创建元素('div', { style: { display: 'none', width: '320px', flexShrink: '0', height: '100%' } })
-    let 重新计算排除片段 = (): void => {
-      let 峰值数据 = this.时间轴组件?.获取峰值数据()
-      if (峰值数据 === null || 峰值数据 === undefined || 峰值数据.length === 0) return
-      let 时长 = 峰值数据.length / 100
-      let 排除片段 = 计算排除片段(时长, 峰值数据, 100, 规则面板.获取规则列表())
-      this.时间轴组件?.设置排除片段(排除片段)
-      this.预览组件?.设置排除片段(排除片段)
-    }
-    let 规则面板 = 创建规则面板((_规则列表) => {
-      重新计算排除片段()
+    let 规则面板 = 创建规则面板((规则列表) => {
+      this.当前规则列表 = [...规则列表]
+      this.重新计算排除片段()
     })
     规则面板包装.append(规则面板.面板元素)
 
@@ -352,6 +359,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           this.预览组件?.设置播放列表(新切片列表)
           this.时间轴组件?.设置播放列表(新切片列表)
           this.时间轴组件?.设置峰值数据(波形数据, 100, false)
+          this.重新计算排除片段()
           setTimeout(() => {
             this.时间轴组件?.同步进度(结束时间)
             this.预览组件?.跳转(结束时间)
@@ -377,12 +385,6 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
   }
   private async 弹出导出设置(): Promise<void> {
     return new Promise((resolve) => {
-      let 视频信息 = this.录制器.切片列表.find((s) => s.videoConfig !== undefined)?.videoConfig
-      let 默认宽度 = 视频信息?.width ?? 1920
-      let 默认高度 = 视频信息?.height ?? 1080
-      let 默认码率 = 10_000_000
-      let 默认帧率 = 30
-
       let 容器 = 创建元素('div', {
         style: {
           padding: '24px',
@@ -403,70 +405,6 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       let 文件名输入 = new 普通输入框({ 值: `录制_${new Date().getTime()}`, 占位符: '请输入文件名' })
       文件名行.appendChild(文件名输入)
 
-      // 导出模式
-      let 模式行 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } })
-      模式行.appendChild(
-        创建元素('label', { textContent: '导出模式', style: { fontSize: '14px', fontWeight: 'bold' } }),
-      )
-      let 模式选择 = new 单选框组({
-        选项列表: ['快速', '兼容'],
-        选项翻译: { 快速: '⚡ 快速导出 (原画)', 兼容: '🛠️ 兼容模式 (自定义)' },
-        值: '快速',
-        方向: '横',
-      })
-      模式行.appendChild(模式选择)
-
-      // 视频配置区域
-      let 配置区域 = 创建元素('div', {
-        style: {
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-          padding: '16px',
-          backgroundColor: '#1f2937',
-          borderRadius: '8px',
-          border: '1px solid #374151',
-          transition: 'opacity 0.3s',
-        },
-      })
-
-      let 创建配置项 = (标签: string, 元素: HTMLElement): HTMLElement => {
-        let 行 = 创建元素('div', {
-          style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
-        })
-        行.appendChild(
-          创建元素('label', { textContent: 标签, style: { fontSize: '13px', color: '#9ca3af', minWidth: '80px' } }),
-        )
-        元素.style.flex = '1'
-        行.appendChild(元素)
-        return 行
-      }
-
-      let 宽度输入 = new 普通输入框({ 值: String(默认宽度), 占位符: '宽度' })
-      let 高度输入 = new 普通输入框({ 值: String(默认高度), 占位符: '高度' })
-      let 码率输入 = new 普通输入框({ 值: String(默认码率 / 1_000_000), 占位符: '码率 (Mbps)' })
-      let 帧率输入 = new 普通输入框({ 值: String(默认帧率), 占位符: '帧率' })
-      let 硬件加速选择 = new 单选框组({
-        选项列表: ['prefer-hardware', 'prefer-software'],
-        选项翻译: { 'prefer-hardware': '硬件加速', 'prefer-software': '软件编码' },
-        值: 'prefer-hardware',
-        方向: '横',
-      })
-
-      配置区域.append(
-        创建配置项(
-          '分辨率',
-          创建元素('div', {
-            style: { display: 'flex', alignItems: 'center', gap: '8px' },
-            children: [宽度输入, 创建元素('span', { textContent: '×', style: { color: '#6b7280' } }), 高度输入],
-          }),
-        ),
-        创建配置项('码率 (Mbps)', 码率输入),
-        创建配置项('帧率 (FPS)', 帧率输入),
-        创建配置项('硬件加速', 硬件加速选择),
-      )
-
-      // 模式说明
       let 说明容器 = 创建元素('div', {
         style: {
           padding: '12px',
@@ -477,29 +415,11 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           borderLeft: '4px solid #3b82f6',
         },
       })
-
-      let 更新状态 = (模式: string): void => {
-        if (模式 === '快速') {
-          配置区域.style.opacity = '0.5'
-          配置区域.style.pointerEvents = 'none'
-          说明容器.innerHTML = `
-            <div style="color: #60a5fa; font-weight: bold; margin-bottom: 4px;">模式说明：快速导出</div>
-            <div style="color: #9ca3af;">• 直接封装原始数据，<b>无法修改</b>上方视频参数。</div>
-            <div style="color: #9ca3af;">• <b>速度：</b> 极快 | <b>画质：</b> 100% 原画。</div>
-          `
-        } else {
-          配置区域.style.opacity = '1'
-          配置区域.style.pointerEvents = 'auto'
-          说明容器.innerHTML = `
-            <div style="color: #f59e0b; font-weight: bold; margin-bottom: 4px;">模式说明：兼容模式</div>
-            <div style="color: #9ca3af;">• 重新编码视频，<b>支持自定义</b>分辨率和码率。</div>
-            <div style="color: #9ca3af;">• <b>速度：</b> 较慢 | <b>用途：</b> 压缩文件或标准化格式。</div>
-          `
-        }
-      }
-
-      更新状态('快速')
-      模式选择.监听发出事件('变化', async (e) => 更新状态(e.detail))
+      说明容器.innerHTML = `
+        <div style="color: #60a5fa; font-weight: bold; margin-bottom: 4px;">原画导出</div>
+        <div style="color: #9ca3af;">直接封装原始音视频，并应用当前启用的剪辑规则。</div>
+        <div style="color: #9ca3af;">为保证视频可解码，裁剪起点会对齐到下一个关键帧。</div>
+      `
 
       // 按钮
       let 底部 = 创建元素('div', {
@@ -513,20 +433,13 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         },
       })
       let 确认导出按钮 = new 主要按钮({
-        文本: '🚀 开始导出',
+        文本: '开始导出',
         点击处理函数: async (): Promise<void> => {
-          let 配置: 导出配置 = {
-            文件名: 文件名输入.获得值() !== '' ? 文件名输入.获得值() : '未命名',
-            视频宽度: Number(宽度输入.获得值()),
-            视频高度: Number(高度输入.获得值()),
-            视频码率: Number(码率输入.获得值()) * 1_000_000,
-            视频帧率: Number(帧率输入.获得值()),
-            硬件加速: 硬件加速选择.获得值() as HardwareAcceleration,
-            导出模式: 模式选择.获得值() as '快速' | '兼容',
-          }
+          let 配置: 导出配置 = { 文件名: 文件名输入.获得值() !== '' ? 文件名输入.获得值() : '未命名' }
           await 关闭模态框()
           try {
-            await this.录制器.导出MP4(配置)
+            this.重新计算排除片段()
+            await this.录制器.导出MP4(this.当前排除片段, 配置)
           } catch (e) {
             alert(`导出失败: ${String(e)}`)
           }
@@ -535,8 +448,8 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       })
       底部.append(取消按钮, 确认导出按钮)
 
-      容器.append(文件名行, 模式行, 配置区域, 说明容器, 底部)
-      void 显示模态框({ 标题: '导出 MP4 设置', 宽度: '480px', 高度: 'auto' }, 容器)
+      容器.append(文件名行, 说明容器, 底部)
+      void 显示模态框({ 标题: '原画导出 MP4', 宽度: '480px', 高度: 'auto' }, 容器)
     })
   }
 }

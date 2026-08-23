@@ -1,4 +1,4 @@
-import { 视频导出器 } from './video-exporter'
+import { 导出配置, 时间范围, 视频导出器 } from './video-exporter'
 import { 视频片段 } from './video-preview'
 
 export type 录制状态 = { 切片列表: 视频片段[]; 实时波形数据: number[] }
@@ -116,11 +116,11 @@ export class 视频录制器 {
     this.录制循环ID = requestAnimationFrame(记录波形循环)
   }
 
-  public async 导出MP4(配置: any): Promise<void> {
+  public async 导出MP4(排除片段列表: 时间范围[], 配置: 导出配置): Promise<void> {
     if (this.切片列表.length === 0) {
       alert('没有可以导出的片段')
       return
     }
-    await this.导出器.导出MP4(this.切片列表, 配置)
+    await this.导出器.导出MP4(this.切片列表, 排除片段列表, 配置)
   }
 }

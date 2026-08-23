@@ -65,7 +65,7 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
   let 剪辑规则按钮 = 创建工具按钮('✂️ 剪辑规则')
 
   let 导出按钮 = 创建元素('button', {
-    textContent: '💾 导出 MP4',
+    textContent: '导出原画 MP4',
     style: {
       padding: '8px 16px',
       backgroundColor: '#2563eb',

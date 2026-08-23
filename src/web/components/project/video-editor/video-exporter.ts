@@ -1,4 +1,5 @@
 import * as Mp4Muxer from 'mp4-muxer'
+import { 减去片段 } from './video-editor-utils'
 import { 视频片段 } from './video-preview'
 
 type VideoChunkList = NonNullable<视频片段['videoChunks']>
@@ -6,15 +7,9 @@ type AudioChunkList = NonNullable<视频片段['audioChunks']>
 type VideoConfig = NonNullable<视频片段['videoConfig']> & { bitrate?: number; framerate?: number }
 type AudioConfig = NonNullable<视频片段['audioConfig']> & { bitrate?: number }
 
-export type 导出配置 = {
-  文件名: string
-  视频宽度: number
-  视频高度: number
-  视频码率: number // bps
-  视频帧率: number
-  硬件加速: HardwareAcceleration
-  导出模式: '快速' | '兼容'
-}
+export type 导出配置 = { 文件名: string }
+
+export type 时间范围 = { start: number; end: number }
 
 export class 视频导出器 {
   private 当前VideoChunks: VideoChunkList = []
@@ -72,6 +67,7 @@ export class 视频导出器 {
       let processor = new window.MediaStreamTrackProcessor<VideoFrame>({ track: videoTrack.clone() })
       let reader = processor.readable.getReader()
       let frameCount = 0
+      let 关键帧间隔 = Math.max(1, Math.round(this.当前VideoConfig.framerate ?? 30))
       let readLoop = async (): Promise<void> => {
         try {
           while (this.isRecordingChunks) {
@@ -82,7 +78,7 @@ export class 视频导出器 {
             // 检查编码器状态，防止崩溃
             if (this.vEncoder !== null && this.vEncoder.state === 'configured') {
               frameCount++
-              this.vEncoder.encode(value, { keyFrame: frameCount === 1 || frameCount % 60 === 0 })
+              this.vEncoder.encode(value, { keyFrame: frameCount === 1 || frameCount % 关键帧间隔 === 0 })
             }
             value.close()
           }
@@ -183,7 +179,7 @@ export class 视频导出器 {
     return result
   }
 
-  public async 导出MP4(切片列表: 视频片段[], 配置: 导出配置): Promise<void> {
+  public async 导出MP4(切片列表: 视频片段[], 排除片段列表: 时间范围[], 配置: 导出配置): Promise<void> {
     if (切片列表.length === 0) {
       throw new Error('没有可以导出的片段')
     }
@@ -199,11 +195,7 @@ export class 视频导出器 {
       let target = new Mp4Muxer.ArrayBufferTarget()
       let options: Mp4Muxer.MuxerOptions<Mp4Muxer.ArrayBufferTarget> = {
         target: target,
-        video: {
-          codec: 'avc',
-          width: 配置.导出模式 === '快速' ? videoConfig.width : 配置.视频宽度,
-          height: 配置.导出模式 === '快速' ? videoConfig.height : 配置.视频高度,
-        },
+        video: { codec: 'avc', width: videoConfig.width, height: videoConfig.height },
         fastStart: 'in-memory',
       }
       if (audioConfig !== undefined) {
@@ -215,162 +207,97 @@ export class 视频导出器 {
       }
 
       let muxer = new Mp4Muxer.Muxer(options)
-      let globalVideoTime = 0
-      let globalAudioTime = 0
+      let videoTrackHasConfig = false
+      let audioTrackHasConfig = false
+      let 输出时间 = 0
 
-      // ── 模式一：快速导出 (直接封装) ──
-      if (配置.导出模式 === '快速') {
-        let videoTrackHasConfig = false
-        let audioTrackHasConfig = false
+      for (let segment of 切片列表) {
+        let videoChunks = segment.videoChunks
+        let 首个视频块 = videoChunks?.[0]
+        if (videoChunks === undefined || 首个视频块 === undefined) continue
 
-        for (let segment of 切片列表) {
-          if (segment.videoChunks !== undefined && segment.videoChunks.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            let startVTs = segment.videoChunks[0]!.timestamp
-            for (let vc of segment.videoChunks) {
-              let relativeTs = vc.timestamp - startVTs
-              if (relativeTs < 0 || relativeTs > segment.duration * 1_000_000) continue
+        let segment结束时间 = segment.start + segment.duration
+        let 保留范围列表 = 减去片段([{ start: segment.start, end: segment结束时间 }], 排除片段列表)
+        let startVTs = 首个视频块.timestamp
+        let audioChunks = segment.audioChunks
+        let startATs = audioChunks?.[0]?.timestamp
+        let curVConfig = segment.videoConfig ?? videoConfig
+        let curAConfig = segment.audioConfig ?? audioConfig
 
-              let meta: any = undefined
-              let curVConfig = segment.videoConfig ?? videoConfig
-              if (curVConfig.description !== undefined && (vc.type === 'key' || !videoTrackHasConfig)) {
+        for (let 保留范围 of 保留范围列表) {
+          let 范围起点 = Math.max(segment.start, 保留范围.start)
+          let 范围终点 = Math.min(segment结束时间, 保留范围.end)
+          let 范围起点相对时间 = (范围起点 - segment.start) * 1_000_000
+          let 范围终点相对时间 = (范围终点 - segment.start) * 1_000_000
+          let 起始关键帧 = videoChunks.find((块) => {
+            let 相对时间 = 块.timestamp - startVTs
+            return 块.type === 'key' && 相对时间 >= 范围起点相对时间 && 相对时间 < 范围终点相对时间
+          })
+          if (起始关键帧 === undefined) continue
+
+          let 实际起点相对时间 = 起始关键帧.timestamp - startVTs
+          let 实际范围时长 = 范围终点相对时间 - 实际起点相对时间
+          if (实际范围时长 <= 0) continue
+
+          for (let vc of videoChunks) {
+            let relativeTs = vc.timestamp - startVTs
+            if (relativeTs < 实际起点相对时间 || relativeTs >= 范围终点相对时间) continue
+            let meta: EncodedVideoChunkMetadata | undefined
+            if (curVConfig.description !== undefined && (vc.type === 'key' || videoTrackHasConfig === false)) {
+              meta = {
+                decoderConfig: {
+                  codec: curVConfig.codec,
+                  description: curVConfig.description,
+                  codedWidth: curVConfig.width,
+                  codedHeight: curVConfig.height,
+                },
+              }
+              videoTrackHasConfig = true
+            }
+            muxer.addVideoChunk(
+              new EncodedVideoChunk({
+                type: vc.type,
+                timestamp: 输出时间 + relativeTs - 实际起点相对时间,
+                duration: Math.min(vc.duration, 范围终点相对时间 - relativeTs),
+                data: vc.data,
+              }),
+              meta,
+            )
+          }
+
+          if (audioChunks !== undefined && startATs !== undefined && curAConfig !== undefined) {
+            for (let ac of audioChunks) {
+              let relativeTs = ac.timestamp - startATs
+              if (relativeTs < 实际起点相对时间 || relativeTs >= 范围终点相对时间) continue
+              let meta: EncodedAudioChunkMetadata | undefined
+              if (curAConfig.description !== undefined && (ac.type === 'key' || audioTrackHasConfig === false)) {
                 meta = {
                   decoderConfig: {
-                    codec: curVConfig.codec,
-                    description: curVConfig.description,
-                    codedWidth: curVConfig.width,
-                    codedHeight: curVConfig.height,
+                    codec: curAConfig.codec,
+                    description: curAConfig.description,
+                    sampleRate: curAConfig.sampleRate,
+                    numberOfChannels: curAConfig.numberOfChannels,
                   },
                 }
-                videoTrackHasConfig = true
+                audioTrackHasConfig = true
               }
-              muxer.addVideoChunk(
-                new EncodedVideoChunk({
-                  type: vc.type,
-                  timestamp: globalVideoTime + relativeTs,
-                  duration: vc.duration,
-                  data: vc.data,
+              muxer.addAudioChunk(
+                new EncodedAudioChunk({
+                  type: ac.type,
+                  timestamp: 输出时间 + relativeTs - 实际起点相对时间,
+                  duration: Math.min(ac.duration, 范围终点相对时间 - relativeTs),
+                  data: ac.data,
                 }),
                 meta,
               )
             }
-            globalVideoTime += segment.duration * 1_000_000
-
-            if (segment.audioChunks !== undefined && segment.audioChunks.length > 0) {
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              let startATs = segment.audioChunks[0]!.timestamp
-              for (let ac of segment.audioChunks) {
-                let relativeTs = ac.timestamp - startATs
-                if (relativeTs < 0 || relativeTs > segment.duration * 1_000_000) continue
-                let meta: any = undefined
-                let curAConfig = segment.audioConfig ?? audioConfig
-                if (curAConfig?.description !== undefined && (ac.type === 'key' || !audioTrackHasConfig)) {
-                  meta = {
-                    decoderConfig: {
-                      codec: curAConfig.codec,
-                      description: curAConfig.description,
-                      sampleRate: curAConfig.sampleRate,
-                      numberOfChannels: curAConfig.numberOfChannels,
-                    },
-                  }
-                  audioTrackHasConfig = true
-                }
-                muxer.addAudioChunk(
-                  new EncodedAudioChunk({
-                    type: ac.type,
-                    timestamp: globalAudioTime + relativeTs,
-                    duration: ac.duration,
-                    data: ac.data,
-                  }),
-                  meta,
-                )
-              }
-              globalAudioTime += segment.duration * 1_000_000
-            }
           }
+
+          输出时间 += 实际范围时长
         }
       }
-      // ── 模式二：兼容模式 (重编码) ──
-      else {
-        console.log('开始兼容模式重编码...', 配置)
-        let canvas = new OffscreenCanvas(配置.视频宽度, 配置.视频高度)
-        let ctx = canvas.getContext('2d')
-        if (ctx === null) throw new Error('无法创建 OffscreenCanvas 上下文')
 
-        let vEncoder = new VideoEncoder({
-          output: (chunk, meta): void => muxer.addVideoChunk(chunk, meta),
-          error: (e): void => console.error('导出编码错误:', e),
-        })
-        vEncoder.configure({
-          codec: 'avc1.4d0034',
-          width: 配置.视频宽度,
-          height: 配置.视频高度,
-          bitrate: 配置.视频码率,
-          framerate: 配置.视频帧率,
-          hardwareAcceleration: 配置.硬件加速,
-        })
-
-        let frameCount = 0
-        for (let segment of 切片列表) {
-          if (segment.videoChunks !== undefined && segment.videoChunks.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            let startVTs = segment.videoChunks[0]!.timestamp
-            let curVConfig = segment.videoConfig ?? videoConfig
-
-            // 创建解码器
-            let vDecoder = new VideoDecoder({
-              output: (frame): void => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height)
-                ctx.drawImage(frame, 0, 0, canvas.width, canvas.height)
-                let newFrame = new VideoFrame(canvas, {
-                  timestamp: globalVideoTime + frame.timestamp - startVTs,
-                  duration: frame.duration ?? 0,
-                })
-                frameCount++
-                vEncoder.encode(newFrame, { keyFrame: frameCount % 60 === 0 })
-                newFrame.close()
-                frame.close()
-              },
-              error: (e): void => console.error('导出解码错误:', e),
-            })
-            vDecoder.configure({
-              codec: curVConfig.codec,
-              description: curVConfig.description,
-              codedWidth: curVConfig.width,
-              codedHeight: curVConfig.height,
-            } as VideoDecoderConfig)
-
-            for (let vc of segment.videoChunks) {
-              vDecoder.decode(
-                new EncodedVideoChunk({ type: vc.type, timestamp: vc.timestamp, duration: vc.duration, data: vc.data }),
-              )
-            }
-            await vDecoder.flush()
-            vDecoder.close()
-            globalVideoTime += segment.duration * 1_000_000
-
-            // 音频处理 (目前兼容模式暂不重编码音频，仅封装)
-            if (segment.audioChunks !== undefined && segment.audioChunks.length > 0) {
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-              let startATs = segment.audioChunks[0]!.timestamp
-              for (let ac of segment.audioChunks) {
-                let relativeTs = ac.timestamp - startATs
-                muxer.addAudioChunk(
-                  new EncodedAudioChunk({
-                    type: ac.type,
-                    timestamp: globalAudioTime + relativeTs,
-                    duration: ac.duration,
-                    data: ac.data,
-                  }),
-                )
-              }
-              globalAudioTime += segment.duration * 1_000_000
-            }
-          }
-        }
-        await vEncoder.flush()
-        vEncoder.close()
-      }
+      if (输出时间 === 0) throw new Error('剪辑规则应用后没有可导出的内容')
 
       muxer.finalize()
       let blob = new Blob([target.buffer], { type: 'video/mp4' })
