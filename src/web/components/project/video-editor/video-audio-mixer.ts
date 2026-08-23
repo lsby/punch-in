@@ -4,6 +4,7 @@ import { 创建元素 } from '../../../global/tools/create-element'
 type 发出事件类型 = {
   音量改变: { 类型: '桌面' | '麦克风'; 音量: number }
   静音状态改变: { 类型: '桌面' | '麦克风'; 是否静音: boolean }
+  门限改变: { 类型: '麦克风'; 门限: number }
 }
 type 监听事件类型 = {}
 
@@ -21,7 +22,7 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
   private 麦克风电平条: HTMLElement | null = null
 
   private 桌面门限 = 0.05 // 默认门限值
-  private 麦克风门限 = 0.05
+  public 麦克风门限 = 0.01
 
   protected override async 当加载时(): Promise<void> {
     this.获得宿主样式().display = 'flex'
@@ -77,14 +78,14 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
     let 中间行 = 创建元素('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } })
 
     let 静音按钮 = 创建元素('button', {
-      textContent: '🔊',
+      textContent: '静音',
       style: {
         background: 'none',
         border: 'none',
         color: '#d8dee9',
         cursor: 'pointer',
         fontSize: '16px',
-        width: '24px',
+        width: '64px',
         display: 'flex',
         justifyContent: 'center',
       },
@@ -115,7 +116,7 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
       let 新状态 = !当前静音
       if (类型 === '桌面') this.桌面音频静音 = 新状态
       if (类型 === '麦克风') this.麦克风静音 = 新状态
-      静音按钮.textContent = 新状态 ? '🔇' : '🔊'
+      静音按钮.textContent = 新状态 ? '取消静音' : '静音'
       静音按钮.style.opacity = 新状态 ? '0.5' : '1'
       this.派发事件('静音状态改变', { 类型, 是否静音: 新状态 })
     }
@@ -135,10 +136,10 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
       门限滑块.min = '0'
       门限滑块.max = '0.2'
       门限滑块.step = '0.001'
-      门限滑块.value = '0.05'
+      门限滑块.value = '0.01'
 
       let 门限db显示 = 创建元素('div', {
-        textContent: '-26.0 dB',
+        textContent: '-40.0 dB',
         style: { color: '#4c566a', fontSize: '11px', width: '50px', textAlign: 'right' },
       })
 
@@ -146,6 +147,7 @@ export class 视频混音器组件 extends 组件基类<发出事件类型, 监�
         let 值 = parseFloat(门限滑块.value)
         if (类型 === '桌面') this.桌面门限 = 值
         if (类型 === '麦克风') this.麦克风门限 = 值
+        if (类型 === '麦克风') this.派发事件('门限改变', { 类型: '麦克风', 门限: 值 })
 
         let db = 20 * Math.log10(值)
         if (值 === 0) db = -100

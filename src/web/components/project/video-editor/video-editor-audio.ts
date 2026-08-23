@@ -1,192 +1,153 @@
 import { 视频混音器组件 } from './video-audio-mixer'
 
 type 分析数据 = { 分析器: AnalyserNode; 数据: Float32Array<ArrayBuffer>; 增益: GainNode }
+export type 音频轨道来源 = { 桌面音频轨道: MediaStreamTrack | null; 麦克风轨道: MediaStreamTrack | null }
 
 export class 视频音频分析器 {
   private 音频上下文: AudioContext | null = null
   private 混音器组件: 视频混音器组件 | null = null
   private 动画帧ID: number | null = null
-
-  // 持有 AnalyserNode 引用，供 即时计算音量() 直接拉取数据
   private 桌面分析: 分析数据 | null = null
   private 麦克风分析: 分析数据 | null = null
   private 混音目标: MediaStreamAudioDestinationNode | null = null
+  private 麦克风噪音门: AudioWorkletNode | null = null
+  private 波形样本队列: number[] = []
 
   public 设置混音器(混音器: 视频混音器组件 | null): void {
     this.混音器组件 = 混音器
-    if (this.混音器组件 !== null) {
-      this.混音器组件.监听发出事件('音量改变', async (e) => {
-        let { 类型, 音量 } = e.detail
-        let 分析 = 类型 === '桌面' ? this.桌面分析 : this.麦克风分析
-        if (分析 !== null) {
-          分析.增益.gain.value = 音量
-        }
-      })
-      this.混音器组件.监听发出事件('静音状态改变', async (e) => {
-        let { 类型, 是否静音 } = e.detail
-        let 分析 = 类型 === '桌面' ? this.桌面分析 : this.麦克风分析
-        if (分析 !== null) {
-          分析.增益.gain.value = 是否静音
-            ? 0
-            : ((类型 === '桌面' ? this.混音器组件?.桌面音频音量 : this.混音器组件?.麦克风音量) ?? 1)
-        }
-      })
-    }
+    if (混音器 === null) return
+    混音器.监听发出事件('音量改变', async (事件) => {
+      let 分析 = 事件.detail.类型 === '桌面' ? this.桌面分析 : this.麦克风分析
+      this.平滑设置增益(分析, 事件.detail.音量)
+    })
+    混音器.监听发出事件('静音状态改变', async (事件) => {
+      let 分析 = 事件.detail.类型 === '桌面' ? this.桌面分析 : this.麦克风分析
+      if (分析 === null) return
+      let 音量 = 事件.detail.类型 === '桌面' ? 混音器.桌面音频音量 : 混音器.麦克风音量
+      this.平滑设置增益(分析, 事件.detail.是否静音 ? 0 : 音量)
+    })
+    混音器.监听发出事件('门限改变', async (事件) => {
+      this.麦克风噪音门?.port.postMessage(事件.detail.门限)
+    })
   }
 
-  public 启动(媒体流: MediaStream): void {
-    if (this.音频上下文 !== null) {
-      void this.音频上下文.close()
-    }
-    if (this.动画帧ID !== null) {
-      cancelAnimationFrame(this.动画帧ID)
-      this.动画帧ID = null
-    }
-
+  public async 启动(来源: 音频轨道来源): Promise<void> {
+    await this.停止()
+    if (来源.桌面音频轨道 === null && 来源.麦克风轨道 === null) return
     this.音频上下文 = new AudioContext()
     let ctx = this.音频上下文
+    await ctx.audioWorklet.addModule(new URL('./video-audio-worklet.ts', import.meta.url))
     this.混音目标 = ctx.createMediaStreamDestination()
+    let 混音节点 = ctx.createGain()
+    let 防削波器 = ctx.createDynamicsCompressor()
+    防削波器.threshold.value = -6
+    防削波器.knee.value = 6
+    防削波器.ratio.value = 8
+    防削波器.attack.value = 0.003
+    防削波器.release.value = 0.15
+    混音节点.connect(防削波器)
+    防削波器.connect(this.混音目标)
 
-    // 确保 AudioContext 不会卡在 suspended 状态
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
-    }
-
-    let 创建分析器 = (stream: MediaStream, 初始音量: number): 分析数据 => {
-      let source = ctx.createMediaStreamSource(stream)
+    let 创建分析器 = (轨道: MediaStreamTrack, 初始音量: number, 初始静音: boolean, 使用噪音门: boolean): 分析数据 => {
+      let source = ctx.createMediaStreamSource(new MediaStream([轨道]))
       let 增益 = ctx.createGain()
-      增益.gain.value = 初始音量
-
+      增益.gain.value = 初始静音 ? 0 : 初始音量
       let 分析器 = ctx.createAnalyser()
-      // 增大 fftSize 以捕获更长的时域窗口（2048 / 48000 ≈ 42.7ms），减少遗漏
       分析器.fftSize = 2048
-      // 降低平滑系数让变化更灵敏
       分析器.smoothingTimeConstant = 0.3
-
-      source.connect(增益)
+      if (使用噪音门) {
+        this.麦克风噪音门 = new AudioWorkletNode(ctx, 'lsby-noise-gate')
+        this.麦克风噪音门.port.postMessage(this.混音器组件?.麦克风门限 ?? 0.01)
+        source.connect(this.麦克风噪音门)
+        this.麦克风噪音门.connect(增益)
+      } else source.connect(增益)
       增益.connect(分析器)
-      if (this.混音目标 !== null) {
-        增益.connect(this.混音目标)
-      }
-
+      增益.connect(混音节点)
       return { 分析器, 数据: new Float32Array(分析器.fftSize), 增益 }
     }
 
-    // 尝试分离轨道（如果有的话）
-    let audioTracks = 媒体流.getAudioTracks()
-
-    let 桌面轨道: MediaStreamTrack | undefined
-    let 麦克风轨道: MediaStreamTrack | undefined
-
-    // 1. 尝试通过标签识别
-    桌面轨道 = audioTracks.find(
-      (t) => t.label.toLowerCase().includes('system') || t.label.toLowerCase().includes('desktop'),
-    )
-    麦克风轨道 = audioTracks.find(
-      (t) =>
-        t.label.toLowerCase().includes('mic') ||
-        t.label.toLowerCase().includes('audio input') ||
-        (!t.label.toLowerCase().includes('system') && !t.label.toLowerCase().includes('desktop')),
-    )
-
-    // 2. 如果通过标签没分出来，或者分重了，则根据顺序强制分配
-    if (audioTracks.length >= 2) {
-      if (桌面轨道 === undefined || 麦克风轨道 === undefined || 桌面轨道 === 麦克风轨道) {
-        桌面轨道 = audioTracks[0]
-        麦克风轨道 = audioTracks[1]
-      }
-    } else if (audioTracks.length === 1) {
-      // 只有一个轨道时，尝试判断它是哪种。如果没有明确标签，优先认为是麦克风（因为录制者通常最在乎麦克风）
-      let 是桌面 = 桌面轨道 !== undefined
-      if (是桌面) {
-        桌面轨道 = audioTracks[0]
-        麦克风轨道 = undefined
-      } else {
-        麦克风轨道 = audioTracks[0]
-        桌面轨道 = undefined
-      }
+    if (来源.桌面音频轨道 !== null) {
+      this.桌面分析 = 创建分析器(
+        来源.桌面音频轨道,
+        this.混音器组件?.桌面音频音量 ?? 1,
+        this.混音器组件?.桌面音频静音 ?? false,
+        false,
+      )
+    }
+    if (来源.麦克风轨道 !== null) {
+      this.麦克风分析 = 创建分析器(
+        来源.麦克风轨道,
+        this.混音器组件?.麦克风音量 ?? 1,
+        this.混音器组件?.麦克风静音 ?? false,
+        true,
+      )
     }
 
-    this.桌面分析 =
-      桌面轨道 !== undefined ? 创建分析器(new MediaStream([桌面轨道]), this.混音器组件?.桌面音频音量 ?? 1) : null
-    this.麦克风分析 =
-      麦克风轨道 !== undefined ? 创建分析器(new MediaStream([麦克风轨道]), this.混音器组件?.麦克风音量 ?? 1) : null
-
-    // rAF 循环仅用于更新混音器电平条显示（UI 反馈）
-    let 循环 = (): void => {
-      if (this.音频上下文 === null) return
-
-      if (this.音频上下文.state === 'suspended') {
-        void this.音频上下文.resume()
-      }
-
-      let 桌面音量 = this.计算单路音量(this.桌面分析)
-      let 麦克风音量 = this.计算单路音量(this.麦克风分析)
-
-      this.混音器组件?.更新实时电平('桌面', 桌面音量)
-      this.混音器组件?.更新实时电平('麦克风', 麦克风音量)
-
-      this.动画帧ID = requestAnimationFrame(循环)
+    let 音量计 = new AudioWorkletNode(ctx, 'lsby-volume-meter')
+    let 静音输出 = ctx.createGain()
+    静音输出.gain.value = 0
+    防削波器.connect(音量计)
+    音量计.connect(静音输出)
+    静音输出.connect(ctx.destination)
+    音量计.port.onmessage = (事件: MessageEvent<number>): void => {
+      this.波形样本队列.push(事件.data)
+      if (this.波形样本队列.length > 6000) this.波形样本队列.splice(0, this.波形样本队列.length - 6000)
     }
-
-    this.动画帧ID = requestAnimationFrame(循环)
+    if (ctx.state === 'suspended') await ctx.resume()
+    this.开始电平循环()
   }
 
-  /**
-   * 即时从 AnalyserNode 拉取最新时域数据并计算 RMS 音量。
-   * 这是一个纯 pull 操作：直接读取 AnalyserNode 内部缓冲区，
-   * 不依赖任何 rAF 循环的中间缓存，因此完全没有竞态条件。
-   * 录制器应在自己的 rAF 回调中调用此方法。
-   */
-  public 即时计算音量(): number {
-    if (this.音频上下文 !== null && this.音频上下文.state === 'suspended') {
-      void this.音频上下文.resume()
-    }
-    let 桌面 = this.计算单路音量(this.桌面分析)
-    let 麦克风 = this.计算单路音量(this.麦克风分析)
-    return Math.max(桌面, 麦克风)
+  public 提取波形样本(): number[] {
+    let 结果 = this.波形样本队列
+    this.波形样本队列 = []
+    return 结果
   }
 
-  /**
-   * 返回混音后的媒体流，包含原始视频轨道和混合后的音频轨道
-   */
   public 获得混音后的流(原始流: MediaStream): MediaStream {
     if (this.音频上下文 === null || this.混音目标 === null) return 原始流
-
     let 结果流 = new MediaStream()
-    // 添加视频轨道
-    原始流.getVideoTracks().forEach((track) => 结果流.addTrack(track))
-    // 添加混音后的音频轨道
-    this.混音目标.stream.getAudioTracks().forEach((track) => 结果流.addTrack(track))
-
+    for (let track of 原始流.getVideoTracks()) 结果流.addTrack(track)
+    for (let track of this.混音目标.stream.getAudioTracks()) 结果流.addTrack(track)
     return 结果流
+  }
+
+  public async 停止(): Promise<void> {
+    if (this.动画帧ID !== null) cancelAnimationFrame(this.动画帧ID)
+    this.动画帧ID = null
+    this.桌面分析 = null
+    this.麦克风分析 = null
+    this.麦克风噪音门 = null
+    this.混音目标 = null
+    this.波形样本队列 = []
+    let ctx = this.音频上下文
+    this.音频上下文 = null
+    if (ctx !== null && ctx.state !== 'closed') await ctx.close()
+  }
+
+  private 开始电平循环(): void {
+    let 循环 = (): void => {
+      if (this.音频上下文 === null) return
+      let 桌面音量 = this.计算单路音量(this.桌面分析)
+      let 麦克风音量 = this.计算单路音量(this.麦克风分析)
+      this.混音器组件?.更新实时电平('桌面', 桌面音量)
+      this.混音器组件?.更新实时电平('麦克风', 麦克风音量)
+      this.动画帧ID = requestAnimationFrame(循环)
+    }
+    this.动画帧ID = requestAnimationFrame(循环)
   }
 
   private 计算单路音量(分析: 分析数据 | null): number {
     if (分析 === null) return 0
-
     分析.分析器.getFloatTimeDomainData(分析.数据)
-
-    let sumSquares = 0.0
-    for (let i = 0; i < 分析.数据.length; i++) {
-      let sample = 分析.数据[i] ?? 0
-      sumSquares += sample * sample
-    }
-    let rms = Math.sqrt(sumSquares / 分析.数据.length)
-    return Math.min(1.0, rms * 6)
+    let 平方和 = 0
+    for (let sample of 分析.数据) 平方和 += sample * sample
+    return Math.min(1, Math.sqrt(平方和 / 分析.数据.length) * 6)
   }
 
-  public 停止(): void {
-    if (this.动画帧ID !== null) {
-      cancelAnimationFrame(this.动画帧ID)
-      this.动画帧ID = null
-    }
-    this.桌面分析 = null
-    this.麦克风分析 = null
-    this.混音目标 = null
-    if (this.音频上下文 !== null) {
-      void this.音频上下文.close()
-      this.音频上下文 = null
-    }
+  private 平滑设置增益(分析: 分析数据 | null, 目标值: number): void {
+    let ctx = this.音频上下文
+    if (分析 === null || ctx === null) return
+    分析.增益.gain.cancelScheduledValues(ctx.currentTime)
+    分析.增益.gain.setTargetAtTime(目标值, ctx.currentTime, 0.01)
   }
 }

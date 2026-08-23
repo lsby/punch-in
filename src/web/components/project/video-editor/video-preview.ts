@@ -1,25 +1,11 @@
 import { 组件基类 } from '../../../base/base'
 import { 创建元素 } from '../../../global/tools/create-element'
+import { 视频片段 } from './video-editor-media'
+
+export type { 视频片段 } from './video-editor-media'
 
 type 发出事件类型 = { 播放状态变化: boolean; 进度变化: number }
 type 监听事件类型 = {}
-
-export interface 视频片段 {
-  url: string
-  start: number
-  duration: number
-  videoChunks?: { type: 'key' | 'delta'; timestamp: number; duration: number; data: Uint8Array }[]
-  audioChunks?: { type: 'key' | 'delta'; timestamp: number; duration: number; data: Uint8Array }[]
-  videoConfig?: {
-    codec: string
-    width: number
-    height: number
-    displayWidth?: number
-    displayHeight?: number
-    description?: Uint8Array
-  }
-  audioConfig?: { codec: string; sampleRate: number; numberOfChannels: number; description?: Uint8Array }
-}
 
 export class 视频预览组件 extends 组件基类<发出事件类型, 监听事件类型> {
   static {
@@ -282,11 +268,6 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   public 设置播放列表(列表: 视频片段[]): void {
     this.播放列表 = 列表
     this.跳转(this.当前全局时间)
-  }
-
-  public 设置视频源(url: string): void {
-    void this.log.info('设置视频源:', url)
-    this.设置播放列表([{ url, start: 0, duration: Infinity }])
   }
 
   public 设置视频流(流: MediaStream | null): void {

@@ -106,7 +106,7 @@
     "kysely": "^0.29.4",
     "kysely-wasm": "^1.2.1",
     "kysely-wasqlite-worker": "^2.0.1",
-    "mp4-muxer": "^5.2.2",
+    "mediabunny": "^1.55.2",
     "node-schedule": "^2.1.1",
     "node-sqlite3-wasm": "^0.8.52",
     "open": "^11.0.0",
