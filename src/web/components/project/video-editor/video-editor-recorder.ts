@@ -21,6 +21,7 @@ export class 视频录制器 {
   private 当前回调: 录制回调集 | null = null
   private 阶段: 录制阶段 = '空闲'
   private 收尾任务: Promise<void> | null = null
+  private 录制开始性能时间 = 0
 
   public 实时波形数据: number[] = []
   public 切片列表: 视频片段[] = []
@@ -59,6 +60,7 @@ export class 视频录制器 {
       let 保留的波形长度 = Math.floor(this.穿插起点时间 * 100)
       if (this.实时波形数据.length > 保留的波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 保留的波形长度)
       else while (this.实时波形数据.length < 保留的波形长度) this.实时波形数据.push(0)
+      this.录制开始性能时间 = performance.now()
       this.阶段 = '录制中'
       this.录制循环ID = window.setInterval((): void => this.记录波形(), 10)
     } catch (错误) {
@@ -112,7 +114,8 @@ export class 视频录制器 {
       return
     }
     this.追加波形样本()
-    let 当前绝对时间 = this.实时波形数据.length / 100
+    let 当前绝对时间 = this.穿插起点时间 + (performance.now() - this.录制开始性能时间) / 1000
+    this.校准波形长度(Math.floor(当前绝对时间 * 100))
     this.当前回调.同步时间轴(this.实时波形数据, 100, 当前绝对时间)
   }
 
@@ -128,9 +131,7 @@ export class 视频录制器 {
       this.追加波形样本()
       let 录制结束时间 = this.穿插起点时间 + 编码结果.duration
       let 目标波形长度 = Math.floor(录制结束时间 * 100)
-      let 最后音量 = this.实时波形数据[this.实时波形数据.length - 1] ?? 0
-      while (this.实时波形数据.length < 目标波形长度) this.实时波形数据.push(最后音量)
-      if (this.实时波形数据.length > 目标波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 目标波形长度)
+      this.校准波形长度(目标波形长度)
       this.切片列表 = await this.本地存储.完成片段(
         编码结果.id,
         编码结果.文件名,
@@ -154,5 +155,11 @@ export class 视频录制器 {
     if (this.录制循环ID === null) return
     clearInterval(this.录制循环ID)
     this.录制循环ID = null
+  }
+
+  private 校准波形长度(目标长度: number): void {
+    let 最后音量 = this.实时波形数据[this.实时波形数据.length - 1] ?? 0
+    while (this.实时波形数据.length < 目标长度) this.实时波形数据.push(最后音量)
+    if (this.实时波形数据.length > 目标长度) this.实时波形数据 = this.实时波形数据.slice(0, 目标长度)
   }
 }

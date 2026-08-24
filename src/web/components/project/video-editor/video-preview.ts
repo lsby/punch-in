@@ -76,7 +76,7 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
 
     video.onplay = (): void => {
-      this.开始进度循环()
+      if (video.srcObject === null) this.开始进度循环()
     }
 
     video.onpause = (): void => {
@@ -89,7 +89,8 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
 
     video.onplaying = (): void => {
-      this.更新状态标签(true)
+      if (video.srcObject === null) this.更新状态标签(true)
+      else this.更新状态标签(false, '屏幕已就绪')
     }
 
     video.onwaiting = (): void => {
@@ -116,7 +117,7 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     }
 
     video.ontimeupdate = (): void => {
-      if (video.paused) {
+      if (video.paused && video.srcObject === null) {
         let 当前片段 = this.播放列表[this.当前播放索引]
         if (当前片段 !== undefined) {
           this.派发事件('进度变化', 当前片段.start + video.currentTime)
@@ -200,6 +201,10 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
     let 循环 = (): void => {
       let video = this.播放器
       if (video !== null && !video.paused) {
+        if (video.srcObject !== null) {
+          this.进度循环ID = null
+          return
+        }
         let 当前片段 = this.播放列表[this.当前播放索引]
         if (当前片段 === undefined) {
           this.进度循环ID = requestAnimationFrame(循环)
@@ -273,9 +278,10 @@ export class 视频预览组件 extends 组件基类<发出事件类型, 监听�
   public 设置视频流(流: MediaStream | null): void {
     void this.log.info('设置视频流')
     if (this.播放器 === null) return
+    this.停止进度循环()
     this.播放器.pause()
-    this.播放器.src = ''
     this.播放器.srcObject = 流
+    this.播放器.src = ''
     if (流 !== null) {
       this.播放器.muted = true // 录制时避免回音
       void this.播放器.play().catch(() => {})

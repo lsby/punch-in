@@ -4,7 +4,7 @@ import { 关闭模态框, 显示模态框 } from '../../../global/manager/modal-
 import { 创建元素 } from '../../../global/tools/create-element'
 
 export type 屏幕选择结果 = { 屏幕ID: string; 录制系统音频: boolean; 录制麦克风: boolean }
-export type 浏览器采集设置 = Omit<屏幕选择结果, '屏幕ID'>
+export type 浏览器采集设置 = { 录制麦克风: boolean }
 
 export async function 弹出Electron屏幕选择(): Promise<屏幕选择结果 | null> {
   let api = window.electronAPI
@@ -13,7 +13,7 @@ export async function 弹出Electron屏幕选择(): Promise<屏幕选择结果 |
     let 屏幕列表 = await api.获取屏幕列表()
     let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } })
     let 录制音频开关 = new 切换开关({ 标签: '录制系统音频', 值: true })
-    let 录制麦克风开关 = new 切换开关({ 标签: '录制麦克风', 值: false })
+    let 录制麦克风开关 = new 切换开关({ 标签: '录制麦克风', 值: true })
     let 内容容器 = 创建元素('div', {
       style: {
         display: 'flex',
@@ -90,16 +90,15 @@ export async function 弹出Electron屏幕选择(): Promise<屏幕选择结果 |
 export async function 弹出浏览器采集设置(): Promise<浏览器采集设置 | null> {
   return new Promise((resolve) => {
     let 容器 = 创建元素('div', { style: { padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' } })
-    let 系统音频 = new 切换开关({ 标签: '录制系统音频', 值: true })
-    let 麦克风 = new 切换开关({ 标签: '录制麦克风', 值: false })
+    let 麦克风 = new 切换开关({ 标签: '录制麦克风', 值: true })
     let 继续按钮 = new 主要按钮({
       文本: '继续选择屏幕',
       点击处理函数: async (): Promise<void> => {
-        resolve({ 录制系统音频: 系统音频.获得值(), 录制麦克风: 麦克风.获得值() })
+        resolve({ 录制麦克风: 麦克风.获得值() })
         await 关闭模态框()
       },
     })
-    容器.append(系统音频, 麦克风, 继续按钮)
+    容器.append(麦克风, 继续按钮)
     void 显示模态框({ 标题: '录制内容', 宽度: '420px', 高度: 'auto', 关闭回调: () => resolve(null) }, 容器)
   })
 }

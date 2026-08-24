@@ -12,6 +12,8 @@ export class 视频音频分析器 {
   private 混音目标: MediaStreamAudioDestinationNode | null = null
   private 麦克风噪音门: AudioWorkletNode | null = null
   private 波形样本队列: number[] = []
+  private 音频就绪任务: Promise<void> | null = null
+  private 标记音频就绪: (() => void) | null = null
 
   public 设置混音器(混音器: 视频混音器组件 | null): void {
     this.混音器组件 = 混音器
@@ -34,6 +36,9 @@ export class 视频音频分析器 {
   public async 启动(来源: 音频轨道来源): Promise<void> {
     await this.停止()
     if (来源.桌面音频轨道 === null && 来源.麦克风轨道 === null) return
+    this.音频就绪任务 = new Promise<void>((完成): void => {
+      this.标记音频就绪 = 完成
+    })
     this.音频上下文 = new AudioContext()
     let ctx = this.音频上下文
     await ctx.audioWorklet.addModule(new URL('./video-audio-worklet.ts', import.meta.url))
@@ -92,9 +97,18 @@ export class 视频音频分析器 {
     音量计.port.onmessage = (事件: MessageEvent<number>): void => {
       this.波形样本队列.push(事件.data)
       if (this.波形样本队列.length > 6000) this.波形样本队列.splice(0, this.波形样本队列.length - 6000)
+      this.标记音频就绪?.()
+      this.标记音频就绪 = null
     }
     if (ctx.state === 'suspended') await ctx.resume()
     this.开始电平循环()
+  }
+
+  public async 等待音频就绪(): Promise<void> {
+    let 任务 = this.音频就绪任务
+    if (任务 === null) return
+    await Promise.race([任务, new Promise<void>((完成): number => window.setTimeout(完成, 1000))])
+    this.提取波形样本()
   }
 
   public 提取波形样本(): number[] {
@@ -119,6 +133,9 @@ export class 视频音频分析器 {
     this.麦克风噪音门 = null
     this.混音目标 = null
     this.波形样本队列 = []
+    this.标记音频就绪?.()
+    this.标记音频就绪 = null
+    this.音频就绪任务 = null
     let ctx = this.音频上下文
     this.音频上下文 = null
     if (ctx !== null && ctx.state !== 'closed') await ctx.close()

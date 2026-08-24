@@ -41,6 +41,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
   private 正在执行空间保护 = false
   private 已提示空间不足 = false
   private 录制启动任务: Promise<void> | null = null
+  private 是否已暂停录制 = false
 
   private 历史栈: 历史状态[] = []
   private 重做栈: 历史状态[] = []
@@ -234,7 +235,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
     按钮集.导出按钮.onclick = async (): Promise<void> => {
       if (this.录制器.是否忙碌()) {
-        alert('请等待当前录制完成收尾')
+        alert('请等待当前录制暂停收尾')
         return
       }
       await this.弹出导出设置()
@@ -266,7 +267,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
 
     按钮集.选择屏幕按钮.onclick = async (): Promise<void> => {
       if (this.录制器.是否忙碌()) {
-        alert('请先停止当前录制')
+        alert('请先暂停当前录制')
         return
       }
       if (this.当前媒体流 !== null) {
@@ -289,11 +290,12 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         } else {
           let 设置 = await 弹出浏览器采集设置()
           if (设置 === null) return
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: 设置.录制系统音频 })
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
           桌面音频轨道 = stream.getAudioTracks()[0] ?? null
           this.是否录制麦克风 = 设置.录制麦克风
         }
         this.当前媒体流 = stream
+        this.是否已暂停录制 = false
         this.当前音频轨道来源 = { 桌面音频轨道, 麦克风轨道: null }
         let 视频轨道 = stream.getVideoTracks()[0]
         if (视频轨道 !== undefined) {
@@ -316,11 +318,11 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     按钮集.录制按钮.onclick = async (): Promise<void> => {
       if (this.录制器.是否正在录制()) {
         按钮集.录制按钮.disabled = true
-        按钮集.录制按钮.textContent = '正在保存'
+        按钮集.录制按钮.textContent = '正在暂停'
         try {
           await this.录制器.停止()
         } catch (错误) {
-          alert(`停止录制失败: ${String(错误)}`)
+          alert(`暂停录制失败: ${String(错误)}`)
         } finally {
           this.设置录制按钮状态(false)
           await this.刷新存储状态()
@@ -362,36 +364,37 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
   }
 
   private async 开始当前录制(按钮集: 控制栏按钮集合): Promise<void> {
+    let 录制起点 = this.时间轴组件?.获取当前时间() ?? 0
     this.保存历史()
     按钮集.录制按钮.disabled = true
     按钮集.录制按钮.textContent = '正在启动'
     try {
       await this.启动麦克风采集()
+      await this.音频分析器.等待音频就绪()
       let 当前媒体流 = this.当前媒体流
       if (当前媒体流 === null) throw new Error('屏幕采集已结束')
       let 混音流 = this.音频分析器.获得混音后的流(当前媒体流)
       this.预览组件?.设置视频流(当前媒体流)
+      this.时间轴组件?.同步进度(录制起点)
       await this.录制器.开始录制(混音流, {
-        获取当前时间: (): number => this.时间轴组件?.获取当前时间() ?? 0,
+        获取当前时间: (): number => 录制起点,
         提取波形样本: (): number[] => this.音频分析器.提取波形样本(),
         同步时间轴: (波形数据, 采样率, 当前时间): void => {
           this.时间轴组件?.更新实时峰值数据(波形数据, 采样率)
           this.时间轴组件?.同步进度(当前时间)
         },
         录制完成: async (新切片列表, 波形数据, 结束时间): Promise<void> => {
-          await this.释放媒体采集()
+          this.是否已暂停录制 = true
+          this.预览组件?.设置视频流(null)
           this.预览组件?.设置播放列表(新切片列表)
           this.时间轴组件?.设置播放列表(新切片列表)
           this.时间轴组件?.设置峰值数据(波形数据, 100, false)
           this.重新计算排除片段()
-          setTimeout((): void => {
-            this.时间轴组件?.同步进度(结束时间)
-            this.预览组件?.跳转(结束时间)
-          }, 50)
+          this.时间轴组件?.同步进度(结束时间)
+          this.预览组件?.跳转(结束时间)
           await this.清理未引用片段()
         },
         录制错误: (错误): void => {
-          void this.释放媒体采集().catch((停止错误: unknown): void => console.error('停止媒体采集失败', 停止错误))
           this.设置录制按钮状态(false)
           alert(`录制失败: ${错误.message}`)
         },
@@ -399,7 +402,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       this.设置录制按钮状态(true)
     } catch (错误) {
       this.历史栈.pop()
-      await this.释放媒体采集()
+      if (this.当前媒体流 !== null) this.预览组件?.设置视频流(this.当前媒体流)
       this.设置录制按钮状态(false)
       alert(`开始录制失败: ${String(错误)}`)
     }
@@ -456,6 +459,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     let stream = this.当前媒体流
     this.当前媒体流 = null
     this.是否录制麦克风 = false
+    this.是否已暂停录制 = false
     this.当前音频轨道来源 = { 桌面音频轨道: null, 麦克风轨道: null }
     if (stream !== null) {
       for (let track of stream.getTracks()) {
@@ -479,7 +483,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     let 按钮 = this.控制栏按钮?.录制按钮
     if (按钮 === undefined) return
     按钮.disabled = false
-    按钮.textContent = 正在录制 ? '停止录制' : '开始录制'
+    按钮.textContent = 正在录制 ? '暂停录制' : this.是否已暂停录制 && this.当前媒体流 !== null ? '继续录制' : '开始录制'
     按钮.style.backgroundColor = 正在录制 ? '#4b5563' : '#dc2626'
     按钮.style.borderColor = 正在录制 ? '#6b7280' : '#ef4444'
     按钮.style.animation = 正在录制 ? 'pulse 1.5s infinite' : 'none'
@@ -493,10 +497,11 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       let 统计 = await this.本地存储.获得统计()
       let 可录秒数 = 计算可录制秒数(统计, this.录制器.获得预计每秒字节数())
       按钮.textContent = `本地 ${格式化字节数(统计.录制字节数)} · 可录 ${格式化时长(可录秒数)}`
+      按钮.title = 按钮.textContent
       if (this.录制器.是否正在录制() && 可录秒数 <= 120 && this.正在执行空间保护 === false) {
         this.正在执行空间保护 = true
         try {
-          alert('本地存储空间预计不足 2 分钟，录制将安全停止')
+          alert('本地存储空间预计不足 2 分钟，录制将安全暂停')
           await this.录制器.停止()
           this.设置录制按钮状态(false)
         } finally {
@@ -504,7 +509,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         }
       } else if (this.录制器.是否正在录制() && 可录秒数 <= 600 && this.已提示空间不足 === false) {
         this.已提示空间不足 = true
-        alert('本地存储空间预计不足 10 分钟，请及时停止并清理或导出录制')
+        alert('本地存储空间预计不足 10 分钟，请及时暂停并清理或导出录制')
       } else if (可录秒数 > 600) this.已提示空间不足 = false
     } catch (错误) {
       按钮.textContent = '本地存储状态不可用'

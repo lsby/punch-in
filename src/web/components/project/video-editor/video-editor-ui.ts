@@ -14,6 +14,7 @@ export type 控制栏按钮集合 = {
 
 export function 创建控制栏(判断是否正在录制: () => boolean): 控制栏按钮集合 {
   let 顶部控制栏 = 创建元素('div', {
+    className: 'video-editor-toolbar',
     style: {
       display: 'flex',
       gap: '12px',
@@ -26,6 +27,7 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
   })
 
   let 录制按钮 = 创建元素('button', {
+    className: 'record-button',
     textContent: '开始录制',
     style: {
       padding: '8px 24px',
@@ -42,6 +44,8 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
       alignItems: 'center',
       gap: '8px',
       boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+      whiteSpace: 'nowrap',
+      flexShrink: '0',
     },
   })
   录制按钮.onmouseenter = (): void => {
@@ -58,6 +62,7 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
   }
 
   let 选择屏幕按钮 = 创建工具按钮('选择录制屏幕')
+  选择屏幕按钮.className = 'screen-button'
   选择屏幕按钮.style.marginLeft = 'auto'
 
   let 撤销按钮 = 创建工具按钮('撤销')
@@ -65,8 +70,10 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
   let 切换混音器按钮 = 创建工具按钮('混音器')
   let 剪辑规则按钮 = 创建工具按钮('剪辑规则')
   let 存储按钮 = 创建工具按钮('本地存储')
+  存储按钮.className = 'storage-button'
 
   let 导出按钮 = 创建元素('button', {
+    className: 'export-button',
     textContent: '导出原画 MP4',
     style: {
       padding: '8px 16px',
@@ -78,6 +85,8 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
       fontSize: '14px',
       outline: 'none',
       transition: 'all 0.2s',
+      whiteSpace: 'nowrap',
+      flexShrink: '0',
     },
   })
   导出按钮.onmouseenter = (): void => {
@@ -89,7 +98,38 @@ export function 创建控制栏(判断是否正在录制: () => boolean): 控制
     导出按钮.style.borderColor = '#3b82f6'
   }
 
-  顶部控制栏.append(录制按钮, 撤销按钮, 重做按钮, 选择屏幕按钮, 切换混音器按钮, 剪辑规则按钮, 存储按钮, 导出按钮)
+  let 响应式样式 = 创建元素('style', {
+    textContent: `
+      .video-editor-toolbar button { min-height: 42px; white-space: nowrap; flex-shrink: 0; line-height: 1.2; }
+      @media (max-width: 1150px) {
+        .video-editor-toolbar { gap: 6px !important; padding: 8px !important; }
+        .video-editor-toolbar button { padding: 7px 10px !important; font-size: 13px !important; }
+        .video-editor-toolbar .storage-button { flex: 1 1 170px; min-width: 150px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
+      }
+      @media (max-width: 820px) {
+        .video-editor-toolbar { display: grid !important; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        .video-editor-toolbar button { width: 100%; padding: 7px 6px !important; }
+        .video-editor-toolbar .screen-button { margin-left: 0 !important; }
+        .video-editor-toolbar .record-button, .video-editor-toolbar .screen-button { grid-column: span 2; }
+        .video-editor-toolbar .storage-button { grid-column: span 3; min-width: 0; max-width: none; }
+      }
+      @media (max-width: 520px) {
+        .video-editor-toolbar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      }
+    `,
+  })
+
+  顶部控制栏.append(
+    响应式样式,
+    录制按钮,
+    撤销按钮,
+    重做按钮,
+    选择屏幕按钮,
+    切换混音器按钮,
+    剪辑规则按钮,
+    存储按钮,
+    导出按钮,
+  )
 
   return {
     控制栏: 顶部控制栏,
@@ -117,6 +157,8 @@ function 创建工具按钮(文本: string): HTMLButtonElement {
       fontSize: '14px',
       outline: 'none',
       transition: 'all 0.2s',
+      whiteSpace: 'nowrap',
+      flexShrink: '0',
     },
   })
   按钮.onmouseenter = (): void => {

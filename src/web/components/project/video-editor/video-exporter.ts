@@ -108,13 +108,17 @@ export class 视频导出器 {
     let 音频源 =
       音频轨道 === undefined
         ? null
-        : new MediaStreamAudioTrackSource(音频轨道, {
-            codec: 'aac',
-            quality: 音频质量,
-            onEncodedPacket: (packet): void => {
-              统计.编码字节数 += packet.byteLength
+        : new MediaStreamAudioTrackSource(
+            音频轨道,
+            {
+              codec: 'aac',
+              quality: 音频质量,
+              onEncodedPacket: (packet): void => {
+                统计.编码字节数 += packet.byteLength
+              },
             },
-          })
+            { timestampBase: 'zero' },
+          )
     let 当前: 当前录制 = { id: 文件信息.id, 文件名: 文件信息.文件名, 输出, 视频源, 音频源, 错误: null, 统计 }
     this.当前录制 = 当前
     视频源.errorPromise.catch((错误: unknown): void => {
