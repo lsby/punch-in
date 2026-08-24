@@ -65,8 +65,19 @@ export class 视频导出器 {
       }
     }
     let 录制视频尺寸 = this.录制视频尺寸
+    let 录制帧率 = Math.min(Math.max(1, 设置.frameRate ?? 30), 60)
+    let 视频码率 = Math.min(
+      40_000_000,
+      Math.max(12_000_000, Math.round(录制视频尺寸.width * 录制视频尺寸.height * 录制帧率 * 0.16)),
+    )
+    let 源宽度 = this.规范视频尺寸(设置.width ?? 录制视频尺寸.width)
+    let 源高度 = this.规范视频尺寸(设置.height ?? 录制视频尺寸.height)
+    let 视频变换: { width: number; height: number; fit: 'contain' } | undefined =
+      源宽度 === 录制视频尺寸.width && 源高度 === 录制视频尺寸.height
+        ? undefined
+        : { width: 录制视频尺寸.width, height: 录制视频尺寸.height, fit: 'contain' }
     let 统计 = { 编码字节数: 0, 开始时间: performance.now() }
-    let 视频质量 = new Quality({ bitrate: 10_000_000, bitrateMode: 'variable' })
+    let 视频质量 = new Quality({ bitrate: 视频码率, bitrateMode: 'variable' })
     if (
       (await canEncodeVideo('avc', { width: 录制视频尺寸.width, height: 录制视频尺寸.height, quality: 视频质量 })) ===
       false
@@ -96,14 +107,14 @@ export class 视频导出器 {
       {
         codec: 'avc',
         quality: 视频质量,
-        keyFrameInterval: 0,
-        transform: { width: 录制视频尺寸.width, height: 录制视频尺寸.height, fit: 'contain' },
+        keyFrameInterval: 0.1,
+        ...(视频变换 === undefined ? {} : { transform: 视频变换 }),
         contentHint: 'detail',
         onEncodedPacket: (packet): void => {
           统计.编码字节数 += packet.byteLength
         },
       },
-      { frameRate: Math.min(设置.frameRate ?? 30, 60) },
+      { frameRate: 录制帧率, timestampBase: 'zero' },
     )
     let 音频源 =
       音频轨道 === undefined
