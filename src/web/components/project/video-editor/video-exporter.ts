@@ -17,6 +17,7 @@ import {
 } from 'mediabunny'
 import { 视频片段 } from './video-editor-media'
 import { 减去片段 } from './video-editor-utils'
+import { 对齐并合并保留范围 } from './video-exporter-range'
 import { 视频本地存储 } from './video-storage'
 
 export type 导出进度 = { 进度: number; 阶段: string }
@@ -216,6 +217,7 @@ export class 视频导出器 {
     if (切片列表.length === 0) throw new Error('没有可以导出的片段')
     if (this.正在导出) throw new Error('已有导出任务正在进行')
     this.正在导出 = true
+    let 实际排除片段列表 = this.计算导出工作量(切片列表, 排除片段列表) <= 0 ? [] : 排除片段列表
     配置.进度回调?.({ 进度: 0.01, 阶段: '正在准备临时导出文件' })
     let 临时文件名 = `export-${crypto.randomUUID()}.mp4`
     let 输出: Output<Mp4OutputFormat, StreamTarget> | null = null
@@ -235,7 +237,7 @@ export class 视频导出器 {
 
       let 输出时间 = 0
       let 已处理工作量 = 0
-      let 总工作量 = this.计算导出工作量(切片列表, 排除片段列表)
+      let 总工作量 = this.计算导出工作量(切片列表, 实际排除片段列表)
       for (let 片段 of 切片列表) {
         let 文件 = await this.本地存储.获得文件(片段.会话ID, 片段.文件名)
         let 输入 = new Input({ formats: ALL_FORMATS, source: new BlobSource(文件) })
@@ -250,26 +252,18 @@ export class 视频导出器 {
           let 已发送视频配置 = false
           let 已发送音频配置 = false
           let 片段结束时间 = 片段.start + 片段.duration
-          let 保留范围列表 = 减去片段([{ start: 片段.start, end: 片段结束时间 }], 排除片段列表)
-          for (let 保留范围 of 保留范围列表) {
-            let 本地起点 = Math.max(0, 保留范围.start - 片段.start)
-            let 本地终点 = Math.min(片段.duration, 保留范围.end - 片段.start)
-            let 当前工作量 = Math.max(0, 本地终点 - 本地起点)
-            let 起始关键帧 = await this.获得下一个关键帧(视频Sink, 本地起点)
-            if (起始关键帧 === null || 起始关键帧.timestamp >= 本地终点) {
-              已处理工作量 += 当前工作量
-              this.报告封装进度(配置, 已处理工作量, 总工作量)
-              continue
-            }
-            let 实际起点 = 起始关键帧.timestamp
+          let 保留范围列表 = 减去片段([{ start: 片段.start, end: 片段结束时间 }], 实际排除片段列表)
+          let 可封装范围列表 = await 对齐并合并保留范围(片段, 保留范围列表, 视频Sink, 音频Sink)
+          for (let 可封装范围 of 可封装范围列表) {
+            let 当前工作量 = Math.max(0, 可封装范围.end - 可封装范围.start)
             let 本次输出时间 = 输出时间
             let [发送了视频配置, 发送了音频配置] = await Promise.all([
               this.写入视频范围(
                 视频Sink,
                 视频源,
-                起始关键帧,
-                实际起点,
-                本地终点,
+                可封装范围.起始视频包,
+                可封装范围.start,
+                可封装范围.end,
                 本次输出时间,
                 视频配置,
                 已发送视频配置,
@@ -277,11 +271,19 @@ export class 视频导出器 {
               ),
               音频Sink === null || 音频源 === null
                 ? Promise.resolve(false)
-                : this.写入音频范围(音频Sink, 音频源, 实际起点, 本地终点, 本次输出时间, 音频配置, 已发送音频配置),
+                : this.写入音频范围(
+                    音频Sink,
+                    音频源,
+                    可封装范围.start,
+                    可封装范围.end,
+                    本次输出时间,
+                    音频配置,
+                    已发送音频配置,
+                  ),
             ])
             if (发送了视频配置) 已发送视频配置 = true
             if (发送了音频配置) 已发送音频配置 = true
-            输出时间 += 本地终点 - 实际起点
+            输出时间 += 当前工作量
             已处理工作量 += 当前工作量
             this.报告封装进度(配置, 已处理工作量, 总工作量)
           }
@@ -353,18 +355,6 @@ export class 视频导出器 {
       }
     }
     return { 视频编码, 音频编码, 视频配置, 音频配置 }
-  }
-
-  private async 获得下一个关键帧(sink: EncodedPacketSink, 起点: number): Promise<EncodedPacket | null> {
-    let 关键帧 = await sink.getKeyPacket(起点, { verifyKeyPackets: true })
-    if (关键帧 === null) 关键帧 = await sink.getFirstKeyPacket({ verifyKeyPackets: true })
-    while (关键帧 !== null && 关键帧.timestamp < 起点 - 0.000_001) {
-      关键帧 = await sink.getNextKeyPacket(关键帧, { verifyKeyPackets: true })
-    }
-    if (关键帧 !== null && 关键帧.timestamp - 起点 > 0.1) {
-      throw new Error('当前片段使用旧版稀疏关键帧录制，裁剪点无法精确对齐；为避免静默丢失内容，已停止导出')
-    }
-    return 关键帧
   }
 
   private 规范视频尺寸(值: number): number {
@@ -465,7 +455,7 @@ export class 视频导出器 {
     let 发送了配置 = false
     for await (let 包 of sink.packets(起始包)) {
       if (包.timestamp >= 终点) break
-      if (包.timestamp < 起点 || 包.timestamp + 包.duration > 终点) continue
+      if (包.timestamp < 起点 - 0.000_001 || 包.timestamp + 包.duration > 终点 + 0.000_001) continue
       let 新包 = new EncodedPacket(包.data, 包.type, 输出起点 + 包.timestamp - 起点, 包.duration)
       let meta = 已发送配置 || 发送了配置 || 配置 === null ? undefined : { decoderConfig: 配置 }
       await source.add(新包, meta)

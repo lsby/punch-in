@@ -34,8 +34,8 @@ export async function 显示视频导出面板(执行导出: (配置: 导出配�
     })
     说明容器.innerHTML = `
       <div style="color: #60a5fa; font-weight: bold; margin-bottom: 4px;">原画导出</div>
-      <div style="color: #9ca3af;">直接封装原始音视频，并应用当前启用的剪辑规则。</div>
-      <div style="color: #9ca3af;">为保证视频可解码，裁剪起点会对齐到下一个关键帧。</div>
+      <div style="color: #9ca3af;">全程直接封装原始音视频，不进行转码。</div>
+      <div style="color: #9ca3af;">裁剪起点会向前对齐到关键帧；无法安全对齐时保留整个片段，确保能够导出。</div>
     `
 
     let 进度容器 = 创建元素('div', { style: { display: 'none', flexDirection: 'column', gap: '8px' } })
