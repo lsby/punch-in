@@ -150,7 +150,7 @@ export async function 打开规则编辑模态框(
   if (已有规则?.选择部分.持续时间 !== undefined) 持续时间符号.value = 已有规则.选择部分.持续时间.符号
   let 持续时间值 = 创建元素('input', {
     type: 'number',
-    value: 已有规则?.选择部分.持续时间 !== undefined ? 已有规则.选择部分.持续时间.值.toString() : '1',
+    value: 已有规则?.选择部分.持续时间 !== undefined ? 已有规则.选择部分.持续时间.值.toString() : '0.3',
     style: { ...输入项样式, width: '60px' },
   })
   持续时间内容.append(持续时间符号, 持续时间值, 创建元素('span', { textContent: '秒' }))
@@ -175,7 +175,7 @@ export async function 打开规则编辑模态框(
   let 微调符号 = 创建元素('select', { style: { ...输入项样式, flex: '1' } })
   微调符号.innerHTML =
     '<option value="内缩">内缩</option><option value="外扩">外扩</option><option value="不处理">不处理</option>'
-  if (已有规则 !== undefined) 微调符号.value = 已有规则.二次处理.区域微调.类型
+  微调符号.value = 已有规则 !== undefined ? 已有规则.二次处理.区域微调.类型 : '不处理'
   let 微调值 = 创建元素('input', {
     type: 'number',
     value: 已有规则 !== undefined ? 已有规则.二次处理.区域微调.值.toString() : '0.5',
