@@ -249,6 +249,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           this.重做栈 = []
           this.录制器.切片列表 = []
           this.录制器.实时波形数据 = []
+          this.录制器.重置视频码率()
           this.应用状态({ 切片列表: [], 实时波形数据: [] })
           await this.刷新存储状态()
         },
@@ -278,8 +279,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         let stream: MediaStream
         let 桌面音频轨道: MediaStreamTrack | null = null
         if (window.electronAPI?.获取屏幕列表 !== undefined) {
-          let 结果 = await 弹出Electron屏幕选择()
+          let 结果 = await 弹出Electron屏幕选择(this.录制器.获得视频码率(), this.录制器.视频码率是否已锁定())
           if (结果 === null) return
+          this.录制器.设置视频码率(结果.视频码率)
           let constraints: any = {
             audio: 结果.录制系统音频 ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
             video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 结果.屏幕ID } },
@@ -288,8 +290,9 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
           桌面音频轨道 = stream.getAudioTracks()[0] ?? null
           this.是否录制麦克风 = 结果.录制麦克风
         } else {
-          let 设置 = await 弹出浏览器采集设置()
+          let 设置 = await 弹出浏览器采集设置(this.录制器.获得视频码率(), this.录制器.视频码率是否已锁定())
           if (设置 === null) return
+          this.录制器.设置视频码率(设置.视频码率)
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
           桌面音频轨道 = stream.getAudioTracks()[0] ?? null
           this.是否录制麦克风 = 设置.录制麦克风

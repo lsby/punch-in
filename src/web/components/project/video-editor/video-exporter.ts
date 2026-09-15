@@ -47,6 +47,7 @@ export class 视频导出器 {
   private 当前录制: 当前录制 | null = null
   private 本地存储: 视频本地存储
   private 录制视频尺寸: 视频尺寸 | null = null
+  private 最近每秒字节数 = 10_128_000 / 8
 
   public 正在导出 = false
 
@@ -54,7 +55,12 @@ export class 视频导出器 {
     this.本地存储 = 本地存储
   }
 
-  public async 开始录制(stream: MediaStream, 时间轴起点: number, 现有片段列表: 视频片段[]): Promise<void> {
+  public async 开始录制(
+    stream: MediaStream,
+    时间轴起点: number,
+    现有片段列表: 视频片段[],
+    视频码率: number,
+  ): Promise<void> {
     if (this.当前录制 !== null) throw new Error('上一段录制尚未完成收尾')
     let 视频轨道 = stream.getVideoTracks()[0]
     if (视频轨道 === undefined) throw new Error('没有可录制的视频轨道')
@@ -67,10 +73,6 @@ export class 视频导出器 {
     }
     let 录制视频尺寸 = this.录制视频尺寸
     let 录制帧率 = Math.min(Math.max(1, 设置.frameRate ?? 30), 60)
-    let 视频码率 = Math.min(
-      40_000_000,
-      Math.max(12_000_000, Math.round(录制视频尺寸.width * 录制视频尺寸.height * 录制帧率 * 0.16)),
-    )
     let 源宽度 = this.规范视频尺寸(设置.width ?? 录制视频尺寸.width)
     let 源高度 = this.规范视频尺寸(设置.height ?? 录制视频尺寸.height)
     let 视频变换: { width: number; height: number; fit: 'contain' } | undefined =
@@ -182,6 +184,7 @@ export class 视频导出器 {
     try {
       let duration = await 输入.computeDuration()
       if (Number.isFinite(duration) === false || duration <= 0) throw new Error('录制文件没有有效时长')
+      this.最近每秒字节数 = 文件.size / duration
       return { id: 当前.id, 文件名: 当前.文件名, duration, 字节数: 文件.size, 警告 }
     } finally {
       输入.dispose()
@@ -207,10 +210,14 @@ export class 视频导出器 {
 
   public 获得当前每秒字节数(): number {
     let 当前 = this.当前录制
-    if (当前 === null) return 10_128_000 / 8
+    if (当前 === null) return this.最近每秒字节数
     let 秒数 = (performance.now() - 当前.统计.开始时间) / 1000
-    if (秒数 < 5 || 当前.统计.编码字节数 <= 0) return 10_128_000 / 8
+    if (秒数 < 5 || 当前.统计.编码字节数 <= 0) return this.最近每秒字节数
     return 当前.统计.编码字节数 / 秒数
+  }
+
+  public 重置预计每秒字节数(视频码率: number): void {
+    this.最近每秒字节数 = (视频码率 + 128_000) / 8
   }
 
   public async 导出MP4(切片列表: 视频片段[], 排除片段列表: 时间范围[], 配置: 导出配置): Promise<void> {

@@ -5,6 +5,8 @@ import { 视频本地存储 } from './video-storage'
 export type 录制状态 = { 切片列表: 视频片段[]; 实时波形数据: number[] }
 export type 录制阶段 = '空闲' | '启动中' | '录制中' | '收尾中'
 
+let 默认视频码率 = 10_000_000
+
 export type 录制回调集 = {
   获取当前时间: () => number
   提取波形样本: () => number[]
@@ -22,6 +24,8 @@ export class 视频录制器 {
   private 阶段: 录制阶段 = '空闲'
   private 收尾任务: Promise<void> | null = null
   private 录制开始性能时间 = 0
+  private 视频码率 = 默认视频码率
+  private 是否锁定视频码率 = false
 
   public 实时波形数据: number[] = []
   public 切片列表: 视频片段[] = []
@@ -43,6 +47,33 @@ export class 视频录制器 {
     return this.阶段
   }
 
+  public 获得视频码率(): number {
+    return this.视频码率
+  }
+
+  public 视频码率是否已锁定(): boolean {
+    return this.是否锁定视频码率
+  }
+
+  public 设置视频码率(视频码率: number): void {
+    if (Number.isFinite(视频码率) === false || 视频码率 < 1_000_000 || 视频码率 > 40_000_000) {
+      throw new Error('视频码率必须在 1 Mbps 到 40 Mbps 之间')
+    }
+    if (this.是否锁定视频码率) {
+      if (视频码率 !== this.视频码率) throw new Error('首段录制开始后不能切换视频码率')
+      return
+    }
+    this.视频码率 = 视频码率
+    this.导出器.重置预计每秒字节数(视频码率)
+  }
+
+  public 重置视频码率(): void {
+    if (this.阶段 !== '空闲') throw new Error('录制过程中不能重置视频码率')
+    this.是否锁定视频码率 = false
+    this.视频码率 = 默认视频码率
+    this.导出器.重置预计每秒字节数(this.视频码率)
+  }
+
   public 获得预计每秒字节数(): number {
     return this.导出器.获得当前每秒字节数()
   }
@@ -55,7 +86,8 @@ export class 视频录制器 {
     回调.提取波形样本()
 
     try {
-      await this.导出器.开始录制(媒体流, this.穿插起点时间, this.切片列表)
+      await this.导出器.开始录制(媒体流, this.穿插起点时间, this.切片列表, this.视频码率)
+      this.是否锁定视频码率 = true
       回调.提取波形样本()
       let 保留的波形长度 = Math.floor(this.穿插起点时间 * 100)
       if (this.实时波形数据.length > 保留的波形长度) this.实时波形数据 = this.实时波形数据.slice(0, 保留的波形长度)
