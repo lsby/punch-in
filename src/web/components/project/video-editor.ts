@@ -311,6 +311,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
         按钮集.选择屏幕按钮.style.color = '#fff'
         await this.音频分析器.启动(this.当前音频轨道来源)
         this.预览组件?.设置视频流(stream)
+        await this.刷新存储状态()
       } catch (err) {
         console.error('获取屏幕失败', err)
         await this.停止媒体采集()
@@ -480,6 +481,7 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
       按钮.style.backgroundColor = '#2d333b'
       按钮.style.color = '#adbac7'
     }
+    await this.刷新存储状态()
   }
 
   private 设置录制按钮状态(正在录制: boolean): void {
@@ -498,6 +500,11 @@ export class 视频剪辑页面组件 extends 组件基类<发出事件类型, �
     if (按钮 === undefined) return
     try {
       let 统计 = await this.本地存储.获得统计()
+      if (this.当前媒体流 === null) {
+        按钮.textContent = `本地 ${格式化字节数(统计.录制字节数)} · 尚未选择屏幕`
+        按钮.title = 按钮.textContent
+        return
+      }
       let 可录秒数 = 计算可录制秒数(统计, this.录制器.获得预计每秒字节数())
       按钮.textContent = `本地 ${格式化字节数(统计.录制字节数)} · 可录 ${格式化时长(可录秒数)}`
       按钮.title = 按钮.textContent
