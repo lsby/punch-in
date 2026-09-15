@@ -244,13 +244,21 @@ export class 视频本地存储 {
     return new OPFS录制可写流(this.获得当前会话ID(), 文件名).创建流()
   }
 
-  public async 保存并删除临时导出文件(文件名: string, 下载文件名: string): Promise<void> {
+  public async 选择导出文件(下载文件名: string): Promise<FileSystemFileHandle | null> {
+    if (window.showSaveFilePicker === undefined) return null
+    return window.showSaveFilePicker({
+      suggestedName: 下载文件名,
+      types: [{ description: 'MP4 视频', accept: { 'video/mp4': ['.mp4'] } }],
+    })
+  }
+
+  public async 保存并删除临时导出文件(
+    文件名: string,
+    下载文件名: string,
+    文件句柄: FileSystemFileHandle | null,
+  ): Promise<void> {
     let 文件 = await this.获得文件(this.获得当前会话ID(), 文件名)
-    if (window.showSaveFilePicker !== undefined) {
-      let 文件句柄 = await window.showSaveFilePicker({
-        suggestedName: 下载文件名,
-        types: [{ description: 'MP4 视频', accept: { 'video/mp4': ['.mp4'] } }],
-      })
+    if (文件句柄 !== null) {
       await 文件.stream().pipeTo(await 文件句柄.createWritable())
       await this.删除临时导出文件(文件名)
       return

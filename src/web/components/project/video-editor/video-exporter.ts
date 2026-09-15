@@ -217,6 +217,13 @@ export class 视频导出器 {
     if (切片列表.length === 0) throw new Error('没有可以导出的片段')
     if (this.正在导出) throw new Error('已有导出任务正在进行')
     this.正在导出 = true
+    let 文件句柄: FileSystemFileHandle | null
+    try {
+      文件句柄 = await this.本地存储.选择导出文件(`${配置.文件名}.mp4`)
+    } catch (错误) {
+      this.正在导出 = false
+      throw 错误
+    }
     let 实际排除片段列表 = this.计算导出工作量(切片列表, 排除片段列表) <= 0 ? [] : 排除片段列表
     配置.进度回调?.({ 进度: 0.01, 阶段: '正在准备临时导出文件' })
     let 临时文件名 = `export-${crypto.randomUUID()}.mp4`
@@ -299,8 +306,8 @@ export class 视频导出器 {
       音频源?.close()
       配置.进度回调?.({ 进度: 0.96, 阶段: '正在完成 MP4 文件' })
       await 输出.finalize()
-      配置.进度回调?.({ 进度: 0.98, 阶段: '正在选择保存位置' })
-      await this.本地存储.保存并删除临时导出文件(临时文件名, `${配置.文件名}.mp4`)
+      配置.进度回调?.({ 进度: 0.98, 阶段: '正在保存文件' })
+      await this.本地存储.保存并删除临时导出文件(临时文件名, `${配置.文件名}.mp4`, 文件句柄)
       await this.本地存储.标记已导出()
       配置.进度回调?.({ 进度: 1, 阶段: '导出完成，文件已保存' })
     } catch (错误) {

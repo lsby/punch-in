@@ -85,6 +85,13 @@ export async function 显示视频导出面板(执行导出: (配置: 导出配�
           确认导出按钮.设置文本('导出完成')
           取消按钮.设置文本('关闭')
         } catch (错误) {
+          if (错误 instanceof DOMException && 错误.name === 'AbortError') {
+            进度容器.style.display = 'none'
+            确认导出按钮.设置文本('开始导出')
+            确认导出按钮.设置禁用(false)
+            取消按钮.设置禁用(false)
+            return
+          }
           阶段文本.textContent = `导出失败：${String(错误)}`
           阶段文本.style.color = '#fca5a5'
           确认导出按钮.设置文本('重新导出')
