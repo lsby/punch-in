@@ -1,22 +1,22 @@
 import { 增强样式类型 } from '../../../../web/global/types/style'
-import { 创建元素, 应用宿主样式 } from '../../../global/tools/create-element'
+import { 创建元素, 应用宿主样式, 应用样式 } from '../../../global/tools/create-element'
+import { 获得表单控件基础样式 } from './control-style'
 import { 表单组件基类 } from './form'
+import { 同步表单控件校验状态 } from './form-accessibility'
 
-type 下拉框事件 = { 变化: string; 焦点: void; 失焦: string }
+type 下拉框事件 = { 变化: string; 焦点: void; 失焦: void }
 
 type 监听下拉框事件 = {}
 
-type 选项类型 = { 值: string; 文本: string; 禁用?: boolean }
+export type 选项类型 = { 值: string; 文本: string; 禁用?: boolean }
 
-type 下拉框配置 = {
+export type 下拉框配置 = {
   选项列表?: 选项类型[]
   值?: string
   禁用?: boolean
   占位符?: string
   额外提示?: string
-  变化处理函数?: (值: string) => void | Promise<void>
-  焦点处理函数?: () => void | Promise<void>
-  失焦处理函数?: (值: string) => void | Promise<void>
+  可访问名称?: string
   宿主样式?: 增强样式类型
   元素样式?: 增强样式类型
 }
@@ -43,15 +43,27 @@ abstract class 下拉框基类 extends 表单组件基类<下拉框事件, 监�
     }
 
     let 下拉框元素 = 创建元素('select', { style: 下拉框样式 })
+    if (this.配置.可访问名称 !== undefined) 下拉框元素.setAttribute('aria-label', this.配置.可访问名称)
 
     if (this.配置.占位符 !== undefined) {
-      let 占位符选项 = 创建元素('option', { value: '', textContent: this.配置.占位符, disabled: true, selected: true })
+      let 占位符选项 = 创建元素('option', {
+        value: '',
+        textContent: this.配置.占位符,
+        disabled: true,
+        selected: true,
+        style: { backgroundColor: 'var(--输入框背景)', color: 'var(--次要文字颜色)' },
+      })
       下拉框元素.appendChild(占位符选项)
     }
 
     if (this.配置.选项列表 !== undefined) {
       for (let 选项 of this.配置.选项列表) {
-        let 选项元素 = 创建元素('option', { value: 选项.值, textContent: 选项.文本, disabled: 选项.禁用 ?? false })
+        let 选项元素 = 创建元素('option', {
+          value: 选项.值,
+          textContent: 选项.文本,
+          disabled: 选项.禁用 ?? false,
+          style: { backgroundColor: 'var(--输入框背景)', color: 'var(--文字颜色)' },
+        })
         下拉框元素.appendChild(选项元素)
       }
     }
@@ -64,19 +76,16 @@ abstract class 下拉框基类 extends 表单组件基类<下拉框事件, 监�
       下拉框元素.disabled = true
     }
 
-    下拉框元素.onchange = async (e: Event): Promise<void> => {
+    下拉框元素.onchange = (e: Event): void => {
       let 值 = (e.target as HTMLSelectElement).value
-      await this.配置.变化处理函数?.(值)
+      this.配置.值 = 值
       this.派发事件('变化', 值)
     }
-    下拉框元素.onfocus = async (): Promise<void> => {
-      await this.配置.焦点处理函数?.()
+    下拉框元素.onfocus = (): void => {
       this.派发事件('焦点', undefined)
     }
-    下拉框元素.onblur = async (): Promise<void> => {
-      let 值 = 下拉框元素.value
-      await this.配置.失焦处理函数?.(值)
-      this.派发事件('失焦', 值)
+    下拉框元素.onblur = (): void => {
+      this.派发事件('失焦', undefined)
     }
 
     容器.appendChild(下拉框元素)
@@ -108,6 +117,7 @@ abstract class 下拉框基类 extends 表单组件基类<下拉框事件, 监�
     this.配置.禁用 = 值
     if (this.下拉框元素 !== undefined) {
       this.下拉框元素.disabled = 值
+      应用样式(this.下拉框元素, { ...this.获得下拉框样式对象(), ...this.配置.元素样式 })
     }
   }
 
@@ -115,24 +125,47 @@ abstract class 下拉框基类 extends 表单组件基类<下拉框事件, 监�
     return this.配置.禁用 ?? false
   }
 
+  public 聚焦(): void {
+    this.下拉框元素?.focus()
+  }
+
+  public 设置可访问名称(名称: string): void {
+    this.配置.可访问名称 = 名称
+    this.下拉框元素?.setAttribute('aria-label', 名称)
+  }
+
+  public 设置校验状态(错误: string | null, 描述文本列表: string[]): void {
+    if (this.下拉框元素 !== undefined) 同步表单控件校验状态([this.下拉框元素], 错误, 描述文本列表)
+  }
+
   public 设置选项列表(选项列表: 选项类型[]): void {
+    let 原值 = this.获得值()
     this.配置.选项列表 = 选项列表
     if (this.下拉框元素 !== undefined) {
-      // 清空现有选项
-      this.下拉框元素.innerHTML = ''
+      this.下拉框元素.replaceChildren()
       if (this.配置.占位符 !== undefined) {
         let 占位符选项 = 创建元素('option', {
           value: '',
           textContent: this.配置.占位符,
           disabled: true,
           selected: true,
+          style: { backgroundColor: 'var(--输入框背景)', color: 'var(--次要文字颜色)' },
         })
         this.下拉框元素.appendChild(占位符选项)
       }
       for (let 选项 of 选项列表) {
-        let 选项元素 = 创建元素('option', { value: 选项.值, textContent: 选项.文本, disabled: 选项.禁用 ?? false })
+        let 选项元素 = 创建元素('option', {
+          value: 选项.值,
+          textContent: 选项.文本,
+          disabled: 选项.禁用 ?? false,
+          style: { backgroundColor: 'var(--输入框背景)', color: 'var(--文字颜色)' },
+        })
         this.下拉框元素.appendChild(选项元素)
       }
+      let 保留原值 = 原值 !== '' && 选项列表.some((选项): boolean => 选项.值 === 原值 && 选项.禁用 !== true)
+      this.下拉框元素.value = 保留原值 ? 原值 : ''
+      this.配置.值 = this.下拉框元素.value
+      if (this.配置.值 !== 原值) this.派发事件('变化', this.配置.值)
     }
   }
 }
@@ -140,19 +173,7 @@ abstract class 下拉框基类 extends 表单组件基类<下拉框事件, 监�
 export class 普通下拉框 extends 下拉框基类 {
   protected 获得下拉框样式对象(): 增强样式类型 {
     let 禁用 = this.配置.禁用 ?? false
-    return {
-      width: '100%',
-      padding: '8px 12px',
-      fontSize: '14px',
-      border: '1px solid var(--边框颜色)',
-      borderRadius: '4px',
-      backgroundColor: 禁用 ? 'var(--禁用背景)' : 'var(--输入框背景)',
-      color: 'var(--文字颜色)',
-      cursor: 禁用 ? 'not-allowed' : 'pointer',
-      opacity: 禁用 ? '0.6' : '1',
-      outline: 'none',
-      boxSizing: 'border-box',
-    }
+    return 获得表单控件基础样式({ 禁用, 光标: 'pointer' })
   }
 }
 

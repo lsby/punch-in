@@ -32,6 +32,26 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: 写入项目配置密钥 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PROJECT_CONFIG_KEY_FILE: ${{ secrets.PROJECT_CONFIG_KEY_FILE }}
+        run: |
+          $encrypted = Select-String -Path .env/.env.production.electron -Pattern '^CONFIG_ENCRYPTION\s*=\s*true\s*$' -Quiet
+          if ($encrypted -and -not $env:PROJECT_CONFIG_KEY_FILE) { throw "加密环境文件缺少仓库 Secret PROJECT_CONFIG_KEY_FILE" }
+          if ($env:PROJECT_CONFIG_KEY_FILE) { Set-Content -Path .project-config.key -Value $env:PROJECT_CONFIG_KEY_FILE }
+
+      - name: 写入项目配置密钥 (macOS)
+        if: runner.os != 'Windows'
+        env:
+          PROJECT_CONFIG_KEY_FILE: ${{ secrets.PROJECT_CONFIG_KEY_FILE }}
+        run: |
+          if grep -Eq '^CONFIG_ENCRYPTION[[:space:]]*=[[:space:]]*true[[:space:]]*$' .env/.env.production.electron && [ -z "$PROJECT_CONFIG_KEY_FILE" ]; then
+            echo "加密环境文件缺少仓库 Secret PROJECT_CONFIG_KEY_FILE" && exit 1
+          fi
+          if [ -n "$PROJECT_CONFIG_KEY_FILE" ]; then printf '%s\n' "$PROJECT_CONFIG_KEY_FILE" > .project-config.key; fi
+
       # Windows 下使用 hoisted 布局，避免 Electron/Parcel 的深层 pnpm 路径问题。
       - name: 配置依赖布局 (Windows)
         if: runner.os == 'Windows'
@@ -55,7 +75,7 @@ jobs:
           touch db/prod-electron.db
 
       - name: 构建完整便携包
-        run: pnpm run public:electron -- --zip
+        run: npm run task -- public:electron -- --zip
 
       - name: 计算 Release 标签 (Windows)
         if: runner.os == 'Windows'

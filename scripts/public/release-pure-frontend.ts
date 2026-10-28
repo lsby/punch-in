@@ -1,8 +1,8 @@
-import { execSync } from 'child_process'
 import fs from 'fs'
 import open from 'open'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { 写入发布信息, 创建当前发布信息 } from './release-info'
 
 let __当前文件名 = fileURLToPath(import.meta.url)
 let __当前目录名 = path.dirname(__当前文件名)
@@ -36,16 +36,6 @@ function 递归复制(源路径: string, 目标路径: string): void {
 
 async function 执行构建(): Promise<void> {
   try {
-    console.log('正在执行前置准备工作 (check, build)...')
-    execSync('dotenv -e ./.env/.env.production.pure-frontend -- npm run _check:all', {
-      stdio: 'inherit',
-      cwd: 项目根目录,
-    })
-    execSync('dotenv -e ./.env/.env.production.pure-frontend -- npm run _build:web:pure-frontend', {
-      stdio: 'inherit',
-      cwd: 项目根目录,
-    })
-
     console.log('[1/3] 正在准备发布目录...')
     if (fs.existsSync(发布目录) === true) {
       fs.rmSync(发布目录, { recursive: true, force: true })
@@ -74,6 +64,7 @@ async function 执行构建(): Promise<void> {
       '',
       '这是一个完全由前端托管的应用产物（包含了所有的纯前端模拟层和 WASM-SQLite 数据库引擎）。',
       '你只需要将当前文件夹下的所有文件部署到任意的**静态文件服务器**（如 Nginx、Vercel、Github Pages 等）即可。',
+      '页面和资源需要通过网络加载；纯前端模式仅表示无需部署后端，不承诺离线使用，也不提供远程数据同步。',
       '',
       '**⚠️ 注意：**',
       '1. 必须在安全上下文（HTTPS 或 localhost）下运行。数据库通过 IndexedDB 持久化，并使用 Web Locks API 串行化不同标签页的本地 API 请求；部署前请确认目标浏览器支持 IndexedDB、Web Worker 和 Web Locks API。',
@@ -81,6 +72,8 @@ async function 执行构建(): Promise<void> {
       '3. 当前数据库后端不使用 OPFS 或 SharedArrayBuffer，无需配置 COOP/COEP 响应头。',
     ].join('\r\n')
     fs.writeFileSync(path.join(发布目录, '部署说明.md'), 说明内容)
+    let 发布信息路径 = 写入发布信息(发布目录, 创建当前发布信息(项目根目录))
+    console.log(`✅ 已写入发布信息: ${发布信息路径}`)
 
     console.log('✅ 纯前端产物整理成功！')
     console.log(`成果物位置: ${发布目录}`)

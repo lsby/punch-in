@@ -1,0 +1,12 @@
+diff --git a/dist/modules/src/custom-coder.d.ts b/dist/modules/src/custom-coder.d.ts
+--- a/dist/modules/src/custom-coder.d.ts
++++ b/dist/modules/src/custom-coder.d.ts
+@@ -116,4 +116,4 @@
+-export declare const customVideoDecoders: typeof CustomVideoDecoder[];
+-export declare const customAudioDecoders: typeof CustomAudioDecoder[];
+-export declare const customVideoEncoders: typeof CustomVideoEncoder[];
+-export declare const customAudioEncoders: typeof CustomAudioEncoder[];
++export declare const customVideoDecoders: unknown[];
++export declare const customAudioDecoders: unknown[];
++export declare const customVideoEncoders: unknown[];
++export declare const customAudioEncoders: unknown[];

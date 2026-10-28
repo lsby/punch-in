@@ -3,6 +3,7 @@ import { Either, Left, Right } from '@lsby/ts-fp-data'
 import fs from 'fs/promises'
 import path from 'path'
 import { z } from 'zod'
+import { 系统配置ID } from '../../../global/const'
 import { 环境变量 } from '../../../global/env'
 import { kysely插件 } from '../../../global/plugin'
 
@@ -26,6 +27,7 @@ let 接口逻辑实现 = 接口逻辑.构造(
       .获得句柄()
       .selectFrom('system_config')
       .select('enable_get_interface_type')
+      .where('id', '=', 系统配置ID)
       .executeTakeFirst()
     if (配置 === undefined || 配置.enable_get_interface_type !== 1) {
       return new Left('该接口未开放' as const)
@@ -41,7 +43,7 @@ type _接口逻辑错误返回 = 计算接口逻辑错误结果<typeof 接口逻
 type _接口逻辑正确返回 = 计算接口逻辑正确结果<typeof 接口逻辑实现>
 
 let 接口错误类型描述 = z.enum(['该接口未开放'])
-let 接口正确类型描述 = z.object({ data: z.string() })
+let 接口正确类型描述 = z.object({ data: z.string() }).strip()
 
 let 自定义返回处理器 = new 自定义接口返回器(
   接口错误类型描述,

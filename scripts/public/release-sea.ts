@@ -3,12 +3,15 @@ import fs from 'fs'
 import open from 'open'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { 读取环境文件明文 } from '../setup/env-crypto-core.mjs'
+import { 写入发布信息, 创建当前发布信息 } from './release-info'
 
 let __当前文件名 = fileURLToPath(import.meta.url)
 let __当前目录名 = path.dirname(__当前文件名)
 let 项目根目录 = path.resolve(__当前目录名, '../../')
 let 相对发布目录 = 'release/sea'
 let 发布目录 = path.join(项目根目录, 相对发布目录)
+let 打包环境文件名 = '.env.production.sea'
 
 function 寻找内置Csc编译器(): string | null {
   let 框架目录组 = ['C:\\Windows\\Microsoft.NET\\Framework64', 'C:\\Windows\\Microsoft.NET\\Framework']
@@ -40,7 +43,7 @@ function 确保目录存在(目录路径: string): void {
  * 递归复制文件夹
  */
 function 递归复制(源路径: string, 目标路径: string): void {
-  if (!fs.existsSync(源路径)) return
+  if (fs.existsSync(源路径) === false) throw new Error(`缺少 SEA 发布所需资源目录: ${源路径}`)
   if (!fs.existsSync(目标路径)) fs.mkdirSync(目标路径, { recursive: true })
   let 所有项 = fs.readdirSync(源路径, { withFileTypes: true })
   for (let 项 of 所有项) {
@@ -56,12 +59,11 @@ function 递归复制(源路径: string, 目标路径: string): void {
 
 async function 执行构建(): Promise<void> {
   try {
-    console.log('正在执行前置准备工作 (db:push, check, build)...')
-    execSync('npm run db:push:prod:sea', { stdio: 'inherit', cwd: 项目根目录 })
-    execSync('dotenv -e ./.env/.env.production.sea -- npm run _check:all', { stdio: 'inherit', cwd: 项目根目录 })
-    execSync('dotenv -e ./.env/.env.production.sea -- npm run _build:all', { stdio: 'inherit', cwd: 项目根目录 })
-
-    let 环境源文件 = path.join(项目根目录, '.env/.env.production.sea')
+    let 环境源文件相对路径 = process.env['ENV_FILE_PATH']
+    if (环境源文件相对路径 === undefined || 环境源文件相对路径 === '') {
+      throw new Error('❌ 缺少 ENV_FILE_PATH，请通过 npm run task -- public:sea 运行发布流程。')
+    }
+    let 环境源文件 = path.resolve(项目根目录, 环境源文件相对路径)
     let 数据库源文件 = path.join(项目根目录, 'db/prod-sea.db')
 
     // 提前检查
@@ -81,7 +83,7 @@ async function 执行构建(): Promise<void> {
     console.log('[2/9] 正在使用 esbuild 合并代码...')
     execSync(
       `npx esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=${相对发布目录}/server.bundle.cjs --format=cjs --packages=bundle --define:import.meta.dirname=__dirname --define:import.meta.url=__import_meta_url --banner:js="var __import_meta_url = typeof __filename !== 'undefined' && __filename ? require('url').pathToFileURL(__filename).href : 'file:///'; var __dirname = typeof __dirname !== 'undefined' ? __dirname : '/';"`,
-      { stdio: 'inherit', cwd: 项目根目录 },
+      { stdio: ['ignore', 'inherit', 'inherit'], cwd: 项目根目录 },
     )
 
     console.log('[3/9] 正在生成 SEA 配置...')
@@ -94,7 +96,10 @@ async function 执行构建(): Promise<void> {
     fs.writeFileSync(path.join(项目根目录, `${相对发布目录}/sea-config.json`), JSON.stringify(SEA配置, null, 2))
 
     console.log('[4/9] 正在生成 SEA blob...')
-    execSync(`node --experimental-sea-config ${相对发布目录}/sea-config.json`, { stdio: 'inherit', cwd: 项目根目录 })
+    execSync(`node --experimental-sea-config ${相对发布目录}/sea-config.json`, {
+      stdio: ['ignore', 'inherit', 'inherit'],
+      cwd: 项目根目录,
+    })
 
     console.log('[5/9] 正在准备可执行文件...')
     let Node可执行文件 = process.execPath
@@ -106,14 +111,17 @@ async function 执行构建(): Promise<void> {
       console.log('[6/9] 正在移除 Windows 代码签名...')
       // Windows 下 node.exe 是签名的, postject 无法注入已签名的二进制
       try {
-        execSync(`signtool remove /s "${目标可执行文件}"`, { stdio: 'inherit', cwd: 项目根目录 })
+        execSync(`signtool remove /s "${目标可执行文件}"`, { stdio: ['ignore', 'inherit', 'inherit'], cwd: 项目根目录 })
       } catch (_) {
         console.log('  signtool 不可用, 将使用 --overwrite 标志')
       }
     } else if (process.platform === 'darwin') {
       console.log('[6/9] 正在移除 macOS 代码签名...')
       try {
-        execSync(`codesign --remove-signature "${目标可执行文件}"`, { stdio: 'inherit', cwd: 项目根目录 })
+        execSync(`codesign --remove-signature "${目标可执行文件}"`, {
+          stdio: ['ignore', 'inherit', 'inherit'],
+          cwd: 项目根目录,
+        })
       } catch (_) {
         console.log('  codesign 移除签名失败，将使用 --overwrite 标志')
       }
@@ -123,7 +131,7 @@ async function 执行构建(): Promise<void> {
     let machoFlags = process.platform === 'darwin' ? '--macho-segment-name NODE_SEA' : ''
     execSync(
       `npx postject "${目标可执行文件}" NODE_SEA_BLOB "${相对发布目录}/sea-prep.blob" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 ${machoFlags} --overwrite`,
-      { stdio: 'inherit', cwd: 项目根目录 },
+      { stdio: ['ignore', 'inherit', 'inherit'], cwd: 项目根目录 },
     )
 
     if (process.platform !== 'win32') {
@@ -132,7 +140,7 @@ async function 执行构建(): Promise<void> {
       } catch (_) {}
       if (process.platform === 'darwin') {
         try {
-          execSync(`codesign -s - "${目标可执行文件}"`, { stdio: 'inherit', cwd: 项目根目录 })
+          execSync(`codesign -s - "${目标可执行文件}"`, { stdio: ['ignore', 'inherit', 'inherit'], cwd: 项目根目录 })
         } catch (_) {}
       }
     }
@@ -148,15 +156,14 @@ async function 执行构建(): Promise<void> {
 
     // 拷贝 sqlite wasm (node-sqlite3-wasm 库需要它在二进制运行目录下)
     let WASM路径 = path.join(项目根目录, 'node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm')
-    if (fs.existsSync(WASM路径) === true) {
-      fs.copyFileSync(WASM路径, path.join(发布目录, 'node-sqlite3-wasm.wasm'))
-    }
+    if (fs.existsSync(WASM路径) === false) throw new Error(`缺少 SEA 发布所需 SQLite WASM 文件: ${WASM路径}`)
+    fs.copyFileSync(WASM路径, path.join(发布目录, 'node-sqlite3-wasm.wasm'))
 
     // 复制环境变量并修改为 sea 模式
     let 环境目标目录 = path.join(发布目录, '.env')
     确保目录存在(环境目标目录)
-    let 环境变量内容 = fs.readFileSync(环境源文件, 'utf-8')
-    fs.writeFileSync(path.join(环境目标目录, '.env.production.sea'), 环境变量内容)
+    let 环境变量内容 = 读取环境文件明文(项目根目录, 环境源文件)
+    fs.writeFileSync(path.join(环境目标目录, 打包环境文件名), 环境变量内容)
 
     console.log('[9/9] 正在生成启动脚本...')
     if (process.platform === 'win32') {
@@ -167,7 +174,7 @@ async function 执行构建(): Promise<void> {
         'echo Starting lsby-punch-in ...',
         'echo.',
         'cd /d "%~dp0"',
-        'set "ENV_FILE_PATH=./.env/.env.production.sea"',
+        `set "ENV_FILE_PATH=./.env/${打包环境文件名}"`,
         'set "DEBUG=@lsby:*,@lsby:punch-in:*"',
         'lsby-punch-in.exe',
         'if errorlevel 1 (',
@@ -178,25 +185,25 @@ async function 执行构建(): Promise<void> {
         '',
       ].join('\r\n')
       fs.writeFileSync(path.join(发布目录, 'run.cmd'), 启动脚本内容)
-      fs.writeFileSync(path.join(发布目录, 'lsby-punch-in-debug.cmd'), 启动脚本内容)
-      console.log(`✅ 已生成 ${path.join(发布目录, 'lsby-punch-in-debug.cmd')}`)
+      fs.writeFileSync(path.join(发布目录, 'app-debug.cmd'), 启动脚本内容)
+      console.log(`✅ 已生成 ${path.join(发布目录, 'app-debug.cmd')}`)
 
       // 生成 start.exe (C# 引导器)
       let cscPath = 寻找内置Csc编译器()
       let launcher源文件 = path.join(__当前目录名, 'launcher', 'launcher.cs')
-      let runExe路径 = path.join(发布目录, 'lsby-punch-in-start.exe')
+      let runExe路径 = path.join(发布目录, 'lsby-punch-in.exe')
 
       if (cscPath === null || fs.existsSync(cscPath) === false) {
-        console.warn(`⚠️ 未找到 C# 编译器，跳过 lsby-punch-in-start.exe 的编译。`)
+        console.warn(`⚠️ 未找到 C# 编译器，跳过 lsby-punch-in.exe 的编译。`)
       } else if (fs.existsSync(launcher源文件) === false) {
-        console.warn(`⚠️ 未找到引导器源码: ${launcher源文件}，跳过 lsby-punch-in-start.exe 的编译。`)
+        console.warn(`⚠️ 未找到引导器源码: ${launcher源文件}，跳过 lsby-punch-in.exe 的编译。`)
       } else {
-        console.log('✅ 正在编译引导器 lsby-punch-in-start.exe ...')
+        console.log('✅ 正在编译引导器 lsby-punch-in.exe ...')
         try {
-          // 使用 /target:exe 避免控制台流异常
+          // 使用 Windows GUI 子系统，默认只显示托盘图标；控制台由引导器按需创建
           execSync(
-            `"${cscPath}" /nologo /target:exe /out:"${runExe路径}" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "${launcher源文件}"`,
-            { stdio: 'inherit' },
+            `"${cscPath}" /nologo /target:winexe /out:"${runExe路径}" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "${launcher源文件}"`,
+            { stdio: ['ignore', 'inherit', 'inherit'] },
           )
           console.log(`✅ 已生成 ${runExe路径}`)
         } catch (error) {
@@ -208,7 +215,7 @@ async function 执行构建(): Promise<void> {
         '#!/usr/bin/env bash',
         'DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"',
         'cd "$DIR"',
-        'export ENV_FILE_PATH="./.env/.env.production.sea"',
+        `export ENV_FILE_PATH="./.env/${打包环境文件名}"`,
         'export DEBUG="@lsby:*,@lsby:punch-in:*"',
         'echo "=================================================="',
         'echo "lsby-punch-in (SEA单文件服务) 启动引导器"',
@@ -226,6 +233,9 @@ async function 执行构建(): Promise<void> {
       fs.writeFileSync(sh路径, 启动脚本内容, { encoding: 'utf8', mode: 0o755 })
       console.log(`✅ 已生成 ${sh路径}`)
     }
+
+    let 发布信息路径 = 写入发布信息(发布目录, 创建当前发布信息(项目根目录))
+    console.log(`✅ 已写入发布信息: ${发布信息路径}`)
 
     // 清理中间文件
     let 中间文件 = ['server.bundle.cjs', 'sea-prep.blob', 'sea-config.json']

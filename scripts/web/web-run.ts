@@ -1,5 +1,10 @@
-import { readdirSync } from 'fs'
+import type { ChildProcess } from 'child_process'
+import crossSpawn from 'cross-spawn'
+import dotenv from 'dotenv'
+import { readdirSync, writeFileSync } from 'fs'
 import path from 'path'
+import { 读取环境文件明文 } from '../setup/env-crypto-core.mjs'
+import { ParcelWorker入口, ParcelWorker选项 } from '../task/model/task-common'
 
 function getHtmlEntries(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -9,18 +14,17 @@ function getHtmlEntries(directory: string): string[] {
   })
 }
 
-import { spawn } from 'child_process'
-import { config } from 'dotenv'
-
-import { writeFileSync } from 'fs'
-
 // 加载环境变量
 let envFile = process.env['ENV_FILE_PATH']
 if (envFile === undefined) {
   console.error('未提供 ENV_FILE_PATH 环境变量！为了避免前端打包到错误的配置，必须指定配置文件。')
   process.exit(1)
 }
-config({ path: envFile })
+let 项目根目录 = path.resolve(import.meta.dirname, '../..')
+let 已解密变量 = dotenv.parse(读取环境文件明文(项目根目录, envFile))
+for (let [名称, 值] of Object.entries(已解密变量)) {
+  if (process.env[名称] === undefined) process.env[名称] = 值
+}
 
 // 根据 APP_PORT 动态写入 .proxyrc.json 供 Parcel 代理使用
 let appPort = process.env['APP_PORT'] ?? '3000'
@@ -31,50 +35,82 @@ let proxyConfig = {
 }
 writeFileSync('.proxyrc.json', JSON.stringify(proxyConfig, null, 2), 'utf-8')
 
+let Parcel进程列表: ChildProcess[] = []
+let 正在重启 = false
+
 function 启动任务(): void {
-  let 子进程 = spawn('npm', ['run', '_clean:web'], { stdio: 'inherit', shell: true })
+  let webPort = process.env['WEB_PORT']
+  let hmrPort = process.env['WEB_HMR_PORT']
+  if (webPort === undefined || hmrPort === undefined) {
+    console.error('未在环境变量中提供 WEB_PORT 或 WEB_HMR_PORT！')
+    process.exit(1)
+  }
 
-  子进程.on('close', (代码: number | null) => {
-    if (代码 !== 0) {
-      console.error('清理脚本失败，退出码:', 代码)
-      重启()
-      return
-    }
-
-    let webPort = process.env['WEB_PORT']
-    let hmrPort = process.env['WEB_HMR_PORT']
-    if (webPort === undefined || hmrPort === undefined) {
-      console.error('未在环境变量中提供 WEB_PORT 或 WEB_HMR_PORT！')
-      process.exit(1)
-    }
-
-    let parcel进程 = spawn(
+  正在重启 = false
+  Parcel进程列表 = []
+  if (process.env['BUILD_TARGET'] === 'pure-frontend') {
+    let Worker进程 = crossSpawn(
       'parcel',
       [
-        '--no-cache',
-        '--no-autoinstall',
+        'watch',
+        ...ParcelWorker选项,
         '--dist-dir',
-        'dist/src/web',
+        'dist/src/web/worker-assets',
+        '--no-hmr',
         '--watch-for-stdin',
-        '--port',
-        webPort,
-        '--hmr-port',
-        hmrPort,
-        ...getHtmlEntries('src/web/page'),
-        // '--lazy',
+        ParcelWorker入口,
       ],
-      { stdio: 'inherit', shell: true },
+      { stdio: ['ignore', 'inherit', 'inherit'] },
     )
+    Parcel进程列表.push(Worker进程)
+  }
+  let Web进程 = crossSpawn(
+    'parcel',
+    [
+      '--no-cache',
+      '--no-autoinstall',
+      '--dist-dir',
+      'dist/src/web',
+      '--watch-for-stdin',
+      '--port',
+      webPort,
+      '--hmr-port',
+      hmrPort,
+      ...getHtmlEntries('src/web/page'),
+      // '--lazy',
+    ],
+    { stdio: ['ignore', 'inherit', 'inherit'] },
+  )
+  Parcel进程列表.push(Web进程)
+  for (let Parcel进程 of Parcel进程列表) Parcel进程.on('close', 处理Parcel进程关闭)
+}
 
-    parcel进程.on('close', () => {
-      console.log('崩了！重启！')
-      setTimeout(() => 重启(), 1000)
-    })
-  })
+function 处理Parcel进程关闭(): void {
+  if (正在重启 === true) return
+  正在重启 = true
+  console.log('Parcel 进程已退出，正在重启开发前端。')
+  for (let Parcel进程 of Parcel进程列表) Parcel进程.kill()
+  setTimeout(() => 重启(), 1000)
 }
 
 function 重启(): void {
-  启动任务()
+  let 清理进程 = crossSpawn('tsx', ['scripts/clean/clean-web.ts'], { stdio: ['ignore', 'inherit', 'inherit'] })
+  清理进程.on('close', (退出码) => {
+    if (退出码 === 0) 启动任务()
+    else {
+      console.error('清理 Web 构建产物失败，稍后重试，退出码:', 退出码)
+      setTimeout(() => 重启(), 1000)
+    }
+  })
 }
+
+function 结束开发进程(): void {
+  正在重启 = true
+  for (let Parcel进程 of Parcel进程列表) Parcel进程.kill()
+  process.exit(0)
+}
+
+process.on('SIGINT', 结束开发进程)
+process.on('SIGTERM', 结束开发进程)
 
 启动任务()

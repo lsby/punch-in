@@ -2,7 +2,14 @@ import archiver from 'archiver'
 import * as fs from 'fs'
 import { NodeSSH } from 'node-ssh'
 import * as path from 'path'
+import { 获得Compose回滚镜像名称, 获得待清理旧镜像列表 } from './docker-image'
 import { 日志类 } from './model'
+
+export { 获得Compose回滚镜像名称, 获得待清理旧镜像列表 } from './docker-image'
+
+export function 转义PosixShell参数(参数: string): string {
+  return `'${参数.replaceAll("'", `'"'"'`)}'`
+}
 
 export function 获取Git忽略名单(项目根目录: string): string[] {
   let 忽略文件路径 = path.join(项目根目录, '.gitignore')
@@ -32,10 +39,69 @@ export function 获取Git忽略名单(项目根目录: string): string[] {
 }
 
 export function 获取完整忽略名单(项目根目录: string): string[] {
-  return [...获取Git忽略名单(项目根目录), '.git/**']
+  let 默认排除名单 = [
+    '.git',
+    '.git/**',
+    'test',
+    'test/**',
+    'doc',
+    'doc/**',
+    '.agents',
+    '.agents/**',
+    '.github',
+    '.github/**',
+    '.vscode',
+    '.vscode/**',
+    '.idea',
+    '.idea/**',
+    'test-outputs',
+    'test-outputs/**',
+    'playwright.config.ts',
+    'playwright.requirement.config.ts',
+    // 手机端/移动端工程及配置
+    'android',
+    'android/**',
+    'ios',
+    'ios/**',
+    'native',
+    'native/**',
+    'capacitor.config.ts',
+    'capacitor.config.json',
+  ]
+  return Array.from(new Set([...获取Git忽略名单(项目根目录), ...默认排除名单]))
 }
 
-export async function 压缩项目(输出路径: string, 源码目录: string, 忽略名单: string[], 日志?: 日志类): Promise<void> {
+export type 压缩项目参数 = {
+  输出路径: string
+  源码目录: string
+  忽略名单: string[]
+  日志?: 日志类
+  强制包含文件组?: string[]
+  覆盖文本文件组?: Array<{ 相对路径: string; 内容: string }>
+}
+
+export async function 压缩项目(参数: 压缩项目参数): Promise<void> {
+  let { 输出路径, 源码目录, 忽略名单, 日志, 强制包含文件组 = [], 覆盖文本文件组 = [] } = 参数
+  let 强制包含文件信息组 = 强制包含文件组.map((文件) => {
+    let 绝对路径 = path.resolve(源码目录, 文件)
+    let 相对路径 = path.relative(源码目录, 绝对路径)
+    if (相对路径.startsWith('..') === true || path.isAbsolute(相对路径) === true) {
+      throw new Error(`强制包含的打包文件必须位于项目内: ${文件}`)
+    }
+    if (fs.existsSync(绝对路径) === false || fs.statSync(绝对路径).isFile() === false) {
+      throw new Error(`强制包含的打包文件不存在: ${文件}`)
+    }
+    return { 绝对路径, 相对路径: 相对路径.replace(/\\/g, '/') }
+  })
+  let 覆盖文本文件信息组 = 覆盖文本文件组.map((文件) => {
+    let 绝对路径 = path.resolve(源码目录, 文件.相对路径)
+    let 相对路径 = path.relative(源码目录, 绝对路径)
+    if (相对路径 === '' || 相对路径.startsWith('..') === true || path.isAbsolute(相对路径) === true) {
+      throw new Error(`覆盖的打包文件必须位于项目内: ${文件.相对路径}`)
+    }
+    return { ...文件, 内容: 文件.内容.replaceAll('\r\n', '\n'), 相对路径: 相对路径.replace(/\\/g, '/') }
+  })
+
   return new Promise((resolve, reject) => {
     let 输出 = fs.createWriteStream(输出路径)
     let 归档器 = archiver('tar', { gzip: true, gzipOptions: { level: 9 } })
@@ -67,15 +133,22 @@ export async function 压缩项目(输出路径: string, 源码目录: string, �
     if (相对输出路径.startsWith('..') === false && path.isAbsolute(相对输出路径) === false) {
       最终忽略名单.push(相对输出路径)
     }
+    最终忽略名单.push(...覆盖文本文件信息组.map((文件) => 文件.相对路径))
 
     归档器.glob('**/*', { cwd: 源码目录, ignore: 最终忽略名单, dot: true })
+    for (let 文件 of 强制包含文件信息组) {
+      归档器.file(文件.绝对路径, { name: 文件.相对路径 })
+    }
+    for (let 文件 of 覆盖文本文件信息组) {
+      归档器.append(文件.内容, { name: 文件.相对路径 })
+    }
 
     归档器.finalize().catch(reject)
   })
 }
 
 export async function 远程路径是否存在(ssh: NodeSSH, 路径: string): Promise<boolean> {
-  let 结果 = await 执行远程命令(ssh, `[ -d "${路径}" ]`, { 打印输出: false, 抛出错误: false })
+  let 结果 = await 执行远程命令(ssh, `[ -d ${转义PosixShell参数(路径)} ]`, { 打印输出: false, 抛出错误: false })
   return 结果.code === 0
 }
 
@@ -96,6 +169,7 @@ export async function 获取Compose镜像列表(
   工作目录: string,
   项目名称?: string,
   compose命令?: string,
+  环境文件路径?: string,
 ): Promise<string[]> {
   if ((await 远程路径是否存在(ssh, 工作目录)) === false) {
     return []
@@ -104,12 +178,26 @@ export async function 获取Compose镜像列表(
   let 最终compose命令 = compose命令 ?? (await 获取Compose命令(ssh))
 
   let 命令 = 最终compose命令
+  if (环境文件路径 !== undefined) {
+    let 绝对环境文件路径 = path.posix.resolve(工作目录, 环境文件路径)
+    let 检查环境文件结果 = await 执行远程命令(ssh, `[ -f ${转义PosixShell参数(绝对环境文件路径)} ]`, {
+      打印输出: false,
+      抛出错误: false,
+    })
+    if (检查环境文件结果.code !== 0) {
+      return []
+    }
+    命令 += ` --env-file ${转义PosixShell参数(环境文件路径)}`
+  }
   if (项目名称 !== undefined) {
-    命令 += ` -p ${项目名称}`
+    命令 += ` -p ${转义PosixShell参数(项目名称)}`
   }
   命令 += ' images -q'
 
-  let 结果 = await 执行远程命令(ssh, 命令, { 工作目录: 工作目录, 打印输出: false })
+  let 结果 = await 执行远程命令(ssh, 命令, { 工作目录: 工作目录, 打印输出: false, 抛出错误: false })
+  if (结果.code !== 0) {
+    return []
+  }
   return 结果.stdout.split(/\s+/).filter((id: string) => id.length > 0)
 }
 
@@ -119,12 +207,34 @@ export async function 清理旧镜像(
   新镜像列表: string[],
   日志: 日志类,
 ): Promise<void> {
-  for (let 镜像ID of 旧镜像列表) {
-    if (新镜像列表.includes(镜像ID) === false) {
-      日志.打印(`检测到旧镜像 ID: ${镜像ID} 已不再用于本项目，尝试执行删除 (docker image rm)...`)
-      await 执行远程命令(ssh, `docker image rm ${镜像ID} || true`)
-    }
+  for (let 镜像ID of 获得待清理旧镜像列表(旧镜像列表, 新镜像列表)) {
+    日志.打印(`检测到旧镜像 ID: ${镜像ID} 已不再用于本项目，尝试执行删除 (docker image rm)...`)
+    await 执行远程命令(ssh, `docker image rm ${转义PosixShell参数(镜像ID)} || true`)
   }
+}
+
+export async function 准备Docker构建空间(ssh: NodeSSH, 检查路径: string, 日志: 日志类): Promise<void> {
+  let 构建缓存保留字节数 = 10 * 1024 * 1024 * 1024
+  let 最小可用千字节数 = 5 * 1024 * 1024
+  日志.打印(`🧹 正在清理超出 10 GiB 的未使用 Docker 构建缓存...`)
+  await 执行远程命令(ssh, `docker builder prune -af --keep-storage ${String(构建缓存保留字节数)}`, { 打印输出: false })
+
+  let 空间结果 = await 执行远程命令(ssh, `df -Pk -- ${转义PosixShell参数(检查路径)} | awk 'NR == 2 { print $4 }'`, {
+    打印输出: false,
+  })
+  let 可用千字节文本 = 空间结果.stdout.trim()
+  if (/^\d+$/u.test(可用千字节文本) === false) {
+    throw new Error(`无法解析远程磁盘可用空间: ${可用千字节文本}`)
+  }
+  let 可用千字节数 = Number.parseInt(可用千字节文本, 10)
+  if (Number.isSafeInteger(可用千字节数) === false) {
+    throw new Error(`远程磁盘可用空间超出安全整数范围: ${可用千字节文本}`)
+  }
+  let 可用GiB = 可用千字节数 / 1024 / 1024
+  if (可用千字节数 < 最小可用千字节数) {
+    throw new Error(`远程磁盘空间不足，构建前至少需要 5 GiB，当前仅剩 ${可用GiB.toFixed(2)} GiB`)
+  }
+  日志.打印(`✅ 远程磁盘空间检查通过，当前可用 ${可用GiB.toFixed(2)} GiB。`)
 }
 
 export async function 执行远程命令(
@@ -160,7 +270,7 @@ export async function 上传文件(ssh: NodeSSH, 本地路径: string, 远程路
   // 弃用 SFTP，改用 SSH 数据流直传。
   // 通过 SSH 终端直传能保证路径上下文与后续 Shell 脚本绝对一致，同时省去 SFTP 的协议开销，速度更快。
   return new Promise((resolve, reject) => {
-    ssh.connection.exec(`cat > "${远程路径}"`, (err: Error | undefined | null, stream: any) => {
+    ssh.connection.exec(`cat > ${转义PosixShell参数(远程路径)}`, (err: Error | undefined | null, stream: any) => {
       if (err !== undefined && err !== null) return reject(new Error(`文件上传启动失败: ${err.message}`))
 
       let readStream = fs.createReadStream(本地路径)
@@ -179,7 +289,7 @@ export async function 上传文件(ssh: NodeSSH, 本地路径: string, 远程路
 
 export async function 下载文件(ssh: NodeSSH, 远程路径: string, 本地路径: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    ssh.connection.exec(`cat "${远程路径}"`, (err: Error | undefined | null, stream: any) => {
+    ssh.connection.exec(`cat ${转义PosixShell参数(远程路径)}`, (err: Error | undefined | null, stream: any) => {
       if (err !== undefined && err !== null) return reject(new Error(`文件下载启动失败: ${err.message}`))
 
       let writeStream = fs.createWriteStream(本地路径)
@@ -194,4 +304,240 @@ export async function 下载文件(ssh: NodeSSH, 远程路径: string, 本地路
       writeStream.on('error', reject)
     })
   })
+}
+
+export function 获得安全远程项目根目录(
+  部署根目录: string,
+  项目名称: string,
+): { 部署根目录: string; 项目根目录: string } {
+  let 规范化部署根目录 = path.posix.normalize(部署根目录.trim())
+  if (规范化部署根目录 === '' || path.posix.isAbsolute(规范化部署根目录) === false) {
+    throw new Error(`远程部署根目录必须是非空的 POSIX 绝对路径: ${部署根目录}`)
+  }
+  let 项目根目录 = path.posix.resolve(规范化部署根目录, 项目名称)
+  let 相对路径 = path.posix.relative(规范化部署根目录, 项目根目录)
+  if (
+    相对路径 === '' ||
+    相对路径 === '..' ||
+    相对路径.startsWith('../') === true ||
+    path.posix.isAbsolute(相对路径) === true
+  ) {
+    throw new Error(`远程项目目录必须严格位于部署根目录内: ${项目根目录}`)
+  }
+  return { 部署根目录: 规范化部署根目录, 项目根目录 }
+}
+
+export function 检查远程删除目标(项目根目录: string, 删除目标: string, 是否允许项目根目录 = false): void {
+  let 规范化项目根目录 = path.posix.resolve(项目根目录)
+  let 规范化删除目标 = path.posix.resolve(删除目标)
+  if (是否允许项目根目录 === true && 规范化删除目标 === 规范化项目根目录) return
+  let 相对路径 = path.posix.relative(规范化项目根目录, 规范化删除目标)
+  if (
+    相对路径 === '' ||
+    相对路径 === '..' ||
+    相对路径.startsWith('../') === true ||
+    path.posix.isAbsolute(相对路径) === true
+  ) {
+    throw new Error(`拒绝删除项目目录边界外的路径: ${删除目标}`)
+  }
+}
+
+export function 获得相对环境文件路径(某个环境: string): string {
+  let 环境文件名表: Record<string, string> = {
+    development: '.env/.env.development.web',
+    production: '.env/.env.production.web',
+  }
+  let 环境文件 = 环境文件名表[某个环境]
+  if (环境文件 === undefined) {
+    throw new Error(`未知环境: ${某个环境}`)
+  }
+  return `../../${环境文件}`
+}
+
+export async function 检查Compose服务是否运行中(
+  ssh: NodeSSH,
+  工作目录: string,
+  项目名称: string,
+  环境: string,
+  compose命令: string,
+  环境文件路径: string,
+): Promise<boolean> {
+  if ((await 远程路径是否存在(ssh, 工作目录)) === false) {
+    return false
+  }
+  let 命令 = `${compose命令} --env-file ${转义PosixShell参数(环境文件路径)} -p ${转义PosixShell参数(`${项目名称}-${环境}`)} ps -a -q app`
+  let 结果 = await 执行远程命令(ssh, 命令, { 工作目录, 打印输出: false })
+  if (结果.code !== 0) {
+    throw new Error(`无法确定 Compose 服务状态，退出码: ${String(结果.code)}`)
+  }
+  let 容器ID列表 = 结果.stdout
+    .split(/\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+  if (容器ID列表.length === 0) {
+    return false
+  }
+  for (let 容器ID of 容器ID列表) {
+    let inspect结果 = await 执行远程命令(ssh, `docker inspect -f '{{.State.Running}}' ${转义PosixShell参数(容器ID)}`, {
+      打印输出: false,
+    })
+    if (inspect结果.code !== 0) {
+      throw new Error(`无法读取容器运行状态: ${容器ID}`)
+    }
+    let 运行状态 = inspect结果.stdout.trim()
+    if (运行状态 !== 'true' && 运行状态 !== 'false') {
+      throw new Error(`容器返回了未知运行状态: ${容器ID} -> ${运行状态}`)
+    }
+    if (运行状态 === 'true') {
+      return true
+    }
+  }
+  return false
+}
+
+export type Compose服务镜像快照 = { 镜像ID: string; 镜像名称: string }
+export type 已保留Compose服务镜像快照 = Compose服务镜像快照 & { 回滚镜像名称: string }
+
+export async function 保留Compose服务镜像(
+  ssh: NodeSSH,
+  快照: Compose服务镜像快照,
+  标识: string,
+): Promise<已保留Compose服务镜像快照> {
+  let 回滚镜像名称 = 获得Compose回滚镜像名称(快照.镜像名称, 标识)
+  await 执行远程命令(
+    ssh,
+    `docker image inspect ${转义PosixShell参数(快照.镜像ID)} >/dev/null && docker tag ${转义PosixShell参数(快照.镜像ID)} ${转义PosixShell参数(回滚镜像名称)}`,
+  )
+  return { ...快照, 回滚镜像名称 }
+}
+
+export async function 清理Compose服务回滚镜像(ssh: NodeSSH, 快照: 已保留Compose服务镜像快照): Promise<void> {
+  await 执行远程命令(ssh, `docker image rm ${转义PosixShell参数(快照.回滚镜像名称)}`, {
+    打印输出: false,
+    抛出错误: false,
+  })
+}
+
+export async function 获取Compose服务镜像快照(
+  ssh: NodeSSH,
+  工作目录: string,
+  项目名称: string,
+  环境: string,
+  compose命令: string,
+  环境文件路径: string,
+): Promise<Compose服务镜像快照 | null> {
+  if ((await 远程路径是否存在(ssh, 工作目录)) === false) {
+    return null
+  }
+  let 基础命令 = `${compose命令} --env-file ${转义PosixShell参数(环境文件路径)} -p ${转义PosixShell参数(`${项目名称}-${环境}`)}`
+  let 容器结果 = await 执行远程命令(ssh, `${基础命令} ps -a -q app`, { 工作目录, 打印输出: false })
+  let 容器ID列表 = 容器结果.stdout
+    .split(/\s+/)
+    .map((值) => 值.trim())
+    .filter((值) => 值.length > 0)
+  if (容器ID列表.length === 0) {
+    return null
+  }
+  if (容器ID列表.length !== 1) {
+    throw new Error(`期望 app 服务恰好对应一个容器，实际为 ${String(容器ID列表.length)} 个`)
+  }
+  let 容器ID = 容器ID列表[0]
+  if (容器ID === undefined) {
+    throw new Error('Compose 返回了空的 app 容器 ID')
+  }
+  let 镜像结果 = await 执行远程命令(
+    ssh,
+    `docker inspect -f '{{.Image}}|{{.Config.Image}}' ${转义PosixShell参数(容器ID)}`,
+    { 打印输出: false },
+  )
+  let [镜像ID, 镜像名称, 多余内容] = 镜像结果.stdout.trim().split('|')
+  if (镜像ID === undefined || 镜像ID === '' || 镜像名称 === undefined || 镜像名称 === '' || 多余内容 !== undefined) {
+    throw new Error(`无法解析 app 容器镜像信息: ${镜像结果.stdout.trim()}`)
+  }
+  return { 镜像ID, 镜像名称 }
+}
+
+let 等待 = async (毫秒数: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 毫秒数)
+  })
+}
+
+export async function 等待Compose应用就绪(
+  ssh: NodeSSH,
+  工作目录: string,
+  项目名称: string,
+  环境: string,
+  compose命令: string,
+  环境文件路径: string,
+): Promise<void> {
+  let 基础命令 = `${compose命令} --env-file ${转义PosixShell参数(环境文件路径)} -p ${转义PosixShell参数(`${项目名称}-${环境}`)}`
+  let 健康检查脚本 = [
+    "let 端口 = process.env['APP_PORT']",
+    "if (端口 === undefined || 端口 === '') process.exit(2)",
+    'fetch(`http://127.0.0.1:${端口}/`).then((响应) => process.exit(响应.ok ? 0 : 1)).catch(() => process.exit(1))',
+  ].join('; ')
+  let 连续成功次数 = 0
+  let 最后状态 = '尚未获得容器状态'
+
+  for (let 尝试次数 = 1; 尝试次数 <= 30; 尝试次数 += 1) {
+    let 容器结果 = await 执行远程命令(ssh, `${基础命令} ps -a -q app`, { 工作目录, 打印输出: false, 抛出错误: false })
+    let 容器ID列表 = 容器结果.stdout
+      .split(/\s+/)
+      .map((值) => 值.trim())
+      .filter((值) => 值.length > 0)
+    let 容器ID = 容器ID列表.length === 1 ? 容器ID列表[0] : undefined
+    if (容器结果.code !== 0) {
+      最后状态 = `Compose 状态查询失败，退出码: ${String(容器结果.code)}`
+    } else if (容器ID === undefined) {
+      最后状态 = `app 容器数量不是 1，实际为 ${String(容器ID列表.length)}`
+    } else {
+      let 状态结果 = await 执行远程命令(
+        ssh,
+        `docker inspect -f '{{.State.Running}}|{{.State.Status}}|{{.RestartCount}}' ${转义PosixShell参数(容器ID)}`,
+        { 打印输出: false, 抛出错误: false },
+      )
+      let [是否运行, 状态, 重启次数] = 状态结果.stdout.trim().split('|')
+      最后状态 = `running=${是否运行 ?? '未知'}, status=${状态 ?? '未知'}, restartCount=${重启次数 ?? '未知'}`
+      if (状态结果.code === 0 && 是否运行 === 'true') {
+        let 探测结果 = await 执行远程命令(ssh, `${基础命令} exec -T app node -e ${转义PosixShell参数(健康检查脚本)}`, {
+          工作目录,
+          打印输出: false,
+          抛出错误: false,
+        })
+        if (探测结果.code === 0) {
+          连续成功次数 += 1
+          if (连续成功次数 >= 3) {
+            return
+          }
+        } else {
+          连续成功次数 = 0
+        }
+      } else {
+        连续成功次数 = 0
+      }
+    }
+    await 等待(2000)
+  }
+
+  await 执行远程命令(ssh, `${基础命令} logs --tail 100 app`, { 工作目录, 打印输出: true, 抛出错误: false })
+  throw new Error(`新服务在 60 秒内未通过连续健康检查，最后状态: ${最后状态}`)
+}
+
+export async function 恢复Compose服务镜像(
+  ssh: NodeSSH,
+  快照: 已保留Compose服务镜像快照,
+  工作目录: string,
+  项目名称: string,
+  环境: string,
+  compose命令: string,
+  环境文件路径: string,
+): Promise<void> {
+  await 执行远程命令(
+    ssh,
+    `docker image inspect ${转义PosixShell参数(快照.回滚镜像名称)} >/dev/null && docker tag ${转义PosixShell参数(快照.回滚镜像名称)} ${转义PosixShell参数(快照.镜像名称)}`,
+  )
+  let 基础命令 = `${compose命令} --env-file ${转义PosixShell参数(环境文件路径)} -p ${转义PosixShell参数(`${项目名称}-${环境}`)}`
+  await 执行远程命令(ssh, `${基础命令} up -d --remove-orphans --force-recreate`, { 工作目录 })
+  await 等待Compose应用就绪(ssh, 工作目录, 项目名称, 环境, compose命令, 环境文件路径)
 }

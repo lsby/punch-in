@@ -5,6 +5,8 @@ import inquirer from 'inquirer'
 import path from 'path'
 import { exit } from 'process'
 import { z } from 'zod'
+import { 读取环境文件明文 } from '../setup/env-crypto-core.mjs'
+import { 写入发布信息, 创建发布信息, 删除发布信息 } from './release-info'
 
 // ============= 配置区 =============
 let 推送目标列表 = [
@@ -15,7 +17,7 @@ let 推送目标列表 = [
 
 // 读取 package.json 文件并解析
 let 包信息路径 = path.resolve(import.meta.dirname, '../../package.json')
-let 包信息模式 = z.object({ name: z.string(), version: z.string() })
+let 包信息模式 = z.object({ name: z.string(), version: z.string() }).passthrough()
 let 包信息 = 包信息模式.parse(JSON.parse(fs.readFileSync(包信息路径, 'utf-8')))
 
 // 默认项目名称，如果项目名称以 @ 开头，去掉它
@@ -24,9 +26,13 @@ let 项目名称 = 包信息.name.startsWith('@') === true ? 包信息.name.slic
 console.log('项目名称: %O, 项目版本: %O', 项目名称, 包信息.version)
 
 // 命令行执行函数
-function 执行命令行(命令: string, 参数: string[], 工作目录?: string): Promise<number> {
+function 执行命令行(命令: string, 参数: string[], 工作目录?: string, 环境变量?: NodeJS.ProcessEnv): Promise<number> {
   return new Promise<number>((解决, 拒绝) => {
-    let 进程 = spawn(命令, 参数, { cwd: 工作目录, stdio: 'inherit' })
+    let 进程 = spawn(命令, 参数, {
+      cwd: 工作目录,
+      stdio: ['ignore', 'inherit', 'inherit'],
+      env: 环境变量 ?? process.env,
+    })
 
     进程.on('close', (退出码) => {
       if (退出码 === null) {
@@ -93,21 +99,26 @@ async function 执行打包(): Promise<void> {
   // 根据用户输入生成 Docker 构建命令
   let docker文件路径 = path.join('deploy', 回答.选择环境, 'dockerfile')
   let 项目根目录 = path.resolve(import.meta.dirname, '../..')
-  console.log('执行命令: %O %O', 'docker', [
+  let 环境文件名表 = { development: '.env/.env.development.web', production: '.env/.env.production.web' }
+  let 环境文件路径 = path.resolve(项目根目录, 环境文件名表[回答.选择环境])
+  if (fs.existsSync(环境文件路径) === false) throw new Error(`缺少 Docker 构建环境文件: ${环境文件路径}`)
+  let 构建参数 = [
     'build',
+    '--secret',
+    'type=env,id=app_env,env=APP_ENV_CONTENT',
     '-t',
     `${回答.用户输入镜像名}:${包信息.version}`,
     '-f',
     docker文件路径,
     '.',
-  ])
+  ]
+  console.log('执行命令: %O %O', 'docker', 构建参数)
 
   try {
-    let 退出码 = await 执行命令行(
-      'docker',
-      ['build', '-t', `${回答.用户输入镜像名}:${包信息.version}`, '-f', docker文件路径, '.'],
-      项目根目录,
-    )
+    let 发布信息路径 = 写入发布信息(项目根目录, 创建发布信息(项目根目录, 环境文件路径))
+    console.log(`✅ 已生成 Docker 构建发布信息: ${发布信息路径}`)
+    let 环境内容 = 读取环境文件明文(项目根目录, 环境文件路径)
+    let 退出码 = await 执行命令行('docker', 构建参数, 项目根目录, { ...process.env, APP_ENV_CONTENT: 环境内容 })
     console.log(`docker build 进程退出，退出码: ${退出码}`)
 
     if (退出码 === 0 && 回答.是否推送 === true && 回答.目标仓库 !== undefined) {
@@ -133,7 +144,9 @@ async function 执行打包(): Promise<void> {
     }
   } catch (错误) {
     console.error('构建出错: ', 错误)
-    exit(1)
+    throw 错误
+  } finally {
+    删除发布信息(项目根目录)
   }
 }
 

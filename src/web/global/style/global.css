@@ -1,77 +1,112 @@
-* {
-  box-sizing: border-box;
+:root,
+html[data-theme='light'] {
+  --字体: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --字号-小: 12px;
+  --字号-正文: 14px;
+  --字号-标题: 18px;
+  --行高-紧凑: 1.35;
+  --行高-正文: 1.6;
+  --间距-1: 4px;
+  --间距-2: 8px;
+  --间距-3: 12px;
+  --间距-4: 16px;
+  --间距-5: 24px;
+  --间距-6: 32px;
+  --圆角-小: 4px;
+  --圆角-中: 8px;
+  --圆角-大: 12px;
+  --控件高度: 36px;
+  --控件高度-紧凑: 30px;
+  --动画-快: 120ms;
+  --动画-正常: 180ms;
+  --浮层起始层级: 1000;
+  --背景颜色: white;
+  --文字颜色: black;
+  --边框颜色: #ccc;
+  --按钮背景: #f0f0f0;
+  --按钮文字: black;
+  --主色调: #409eff;
+  --主色调文字: #000000;
+  --主色调-极淡: color-mix(in srgb, var(--主色调) 10%, transparent);
+  --成功颜色: #52c41a;
+  --成功前景: #237804;
+  --成功文字: #000000;
+  --错误颜色: #ff4d4f;
+  --错误前景: #b42318;
+  --错误文字: #000000;
+  --警告颜色: #faad14;
+  --警告前景: #8a4b00;
+  --警告文字: #000000;
+  --信息颜色: #1890ff;
+  --信息前景: #0958d9;
+  --信息文字: #000000;
+  --卡片背景颜色: white;
+  --面板背景颜色: #f9fafb;
+  --遮罩颜色: rgba(0, 0, 0, 0.45);
+  --深阴影颜色: rgba(15, 23, 42, 0.18);
+  --浅阴影: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --深阴影: 0 18px 48px rgba(15, 23, 42, 0.22);
+  --聚焦环: 0 0 0 3px color-mix(in srgb, var(--主色调) 22%, transparent);
+  --悬浮背景颜色: #e6e6e6;
+  --主要背景颜色: white;
+  --次要背景颜色: #f5f5f5;
+  --选中背景颜色: #e6f7ff;
+  --强调背景颜色: #bae7ff;
+  --强调颜色: #1890ff;
+  --文本颜色: black;
+  --次要文字颜色: #666;
+  --输入框背景: var(--主要背景颜色);
+  --禁用背景: var(--次要背景颜色);
+  --tab-激活文字: #7c3aed;
+  --tab-未激活文字: #6b7280;
+  --tab-悬浮文字: #111827;
+  --tab-激活背景: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08));
+  --tab-悬浮背景: rgba(139, 92, 246, 0.06);
+  --tab-激活边框: rgba(139, 92, 246, 0.3);
+  --tab-指示条: #7c3aed;
+  --tab-头部背景: linear-gradient(90deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+  --tab-头部竖向背景: linear-gradient(180deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+  --tab-阴影: rgba(139, 92, 246, 0.1);
+  --滚动条宽度: 6px;
+  --滚动条标准宽度: thin;
+  --滚动条轨道颜色: transparent;
+  --滚动条滑块颜色: var(--边框颜色);
+  --滚动条滑块悬浮颜色: var(--次要文字颜色);
+  --滚动条圆角: 3px;
 }
 
 :root {
-  --背景颜色: white;
-  --文字颜色: black;
-  --边框颜色: #ccc;
-  --按钮背景: #f0f0f0;
-  --按钮文字: black;
-  --主色调: #409eff;
-  --成功颜色: #52c41a;
-  --错误颜色: #ff4d4f;
-  --警告颜色: #faad14;
-  --信息颜色: #1890ff;
-  --吐司文字颜色: #ffffff;
-  --吐司阴影: rgba(0, 0, 0, 0.15);
-  --卡片背景颜色: white;
-  --遮罩颜色: rgba(0, 0, 0, 0.45);
-  --深阴影颜色: rgba(0, 0, 0, 0.15);
-  --悬浮背景颜色: #e6e6e6;
-  --主要背景颜色: white;
-  --次要背景颜色: #f5f5f5;
-  --选中背景颜色: #e6f7ff;
-  --强调背景颜色: #bae7ff;
-  --强调颜色: #1890ff;
-  --文本颜色: black;
-  --次要文字颜色: #666;
-  --输入框背景: var(--主要背景颜色);
-  --禁用背景: var(--次要背景颜色);
+  color-scheme: light dark;
 }
 
 html[data-theme='light'] {
-  --背景颜色: white;
-  --文字颜色: black;
-  --边框颜色: #ccc;
-  --按钮背景: #f0f0f0;
-  --按钮文字: black;
-  --主色调: #409eff;
-  --成功颜色: #52c41a;
-  --错误颜色: #ff4d4f;
-  --警告颜色: #faad14;
-  --信息颜色: #1890ff;
-  --吐司文字颜色: #ffffff;
-  --吐司阴影: rgba(0, 0, 0, 0.15);
-  --卡片背景颜色: white;
-  --遮罩颜色: rgba(0, 0, 0, 0.45);
-  --深阴影颜色: rgba(0, 0, 0, 0.15);
-  --悬浮背景颜色: #e6e6e6;
-  --主要背景颜色: white;
-  --次要背景颜色: #f5f5f5;
-  --选中背景颜色: #e6f7ff;
-  --强调背景颜色: #bae7ff;
-  --强调颜色: #1890ff;
-  --文本颜色: black;
-  --次要文字颜色: #666;
-  --输入框背景: var(--主要背景颜色);
-  --禁用背景: var(--次要背景颜色);
+  color-scheme: light;
 }
 
 html[data-theme='dark'] {
+  color-scheme: dark;
   --背景颜色: #121212;
   --文字颜色: #ffffff;
   --边框颜色: #333;
   --按钮背景: #333;
   --按钮文字: #ffffff;
   --主色调: #1890ff;
+  --主色调文字: #000000;
+  --主色调-极淡: color-mix(in srgb, var(--主色调) 14%, transparent);
   --成功颜色: #49aa19;
+  --成功前景: #73d13d;
+  --成功文字: #000000;
   --错误颜色: #d32029;
+  --错误前景: #ff7875;
+  --错误文字: #ffffff;
   --警告颜色: #d89614;
+  --警告前景: #ffc53d;
+  --警告文字: #000000;
   --信息颜色: #177ddc;
-  --吐司文字颜色: #ffffff;
-  --吐司阴影: rgba(0, 0, 0, 0.45);
+  --信息前景: #69b1ff;
+  --信息文字: #000000;
   --卡片背景颜色: #1f1f1f;
+  --面板背景颜色: #1f1f1f;
   --遮罩颜色: rgba(0, 0, 0, 0.65);
   --深阴影颜色: rgba(0, 0, 0, 0.45);
   --悬浮背景颜色: #2a2a2a;
@@ -84,6 +119,16 @@ html[data-theme='dark'] {
   --次要文字颜色: #ccc;
   --输入框背景: var(--主要背景颜色);
   --禁用背景: var(--次要背景颜色);
+  --tab-激活文字: #a78bfa;
+  --tab-未激活文字: rgba(255, 255, 255, 0.45);
+  --tab-悬浮文字: #ffffff;
+  --tab-激活背景: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.15));
+  --tab-悬浮背景: rgba(255, 255, 255, 0.05);
+  --tab-激活边框: rgba(139, 92, 246, 0.25);
+  --tab-指示条: #8b5cf6;
+  --tab-头部背景: linear-gradient(90deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+  --tab-头部竖向背景: linear-gradient(180deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+  --tab-阴影: rgba(139, 92, 246, 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -94,13 +139,22 @@ html[data-theme='dark'] {
     --按钮背景: #333;
     --按钮文字: #ffffff;
     --主色调: #1890ff;
+    --主色调文字: #000000;
+    --主色调-极淡: color-mix(in srgb, var(--主色调) 14%, transparent);
     --成功颜色: #49aa19;
+    --成功前景: #73d13d;
+    --成功文字: #000000;
     --错误颜色: #d32029;
+    --错误前景: #ff7875;
+    --错误文字: #ffffff;
     --警告颜色: #d89614;
+    --警告前景: #ffc53d;
+    --警告文字: #000000;
     --信息颜色: #177ddc;
-    --吐司文字颜色: #ffffff;
-    --吐司阴影: rgba(0, 0, 0, 0.45);
+    --信息前景: #69b1ff;
+    --信息文字: #000000;
     --卡片背景颜色: #1f1f1f;
+    --面板背景颜色: #1f1f1f;
     --遮罩颜色: rgba(0, 0, 0, 0.65);
     --深阴影颜色: rgba(0, 0, 0, 0.45);
     --悬浮背景颜色: #2a2a2a;
@@ -113,7 +167,40 @@ html[data-theme='dark'] {
     --次要文字颜色: #ccc;
     --输入框背景: var(--主要背景颜色);
     --禁用背景: var(--次要背景颜色);
+    --tab-激活文字: #a78bfa;
+    --tab-未激活文字: rgba(255, 255, 255, 0.45);
+    --tab-悬浮文字: #ffffff;
+    --tab-激活背景: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.15));
+    --tab-悬浮背景: rgba(255, 255, 255, 0.05);
+    --tab-激活边框: rgba(139, 92, 246, 0.25);
+    --tab-指示条: #8b5cf6;
+    --tab-头部背景: linear-gradient(90deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+    --tab-头部竖向背景: linear-gradient(180deg, rgba(139, 92, 246, 0.03), rgba(59, 130, 246, 0.03));
+    --tab-阴影: rgba(139, 92, 246, 0.2);
   }
+}
+
+* {
+  scrollbar-width: var(--滚动条标准宽度);
+  scrollbar-color: var(--滚动条滑块颜色) var(--滚动条轨道颜色);
+}
+
+*::-webkit-scrollbar {
+  width: var(--滚动条宽度);
+  height: var(--滚动条宽度);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--滚动条轨道颜色);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--滚动条滑块颜色);
+  border-radius: var(--滚动条圆角);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--滚动条滑块悬浮颜色);
 }
 
 body {
@@ -121,11 +208,16 @@ body {
   color: var(--文字颜色);
   margin: 0;
   padding: 0;
-  font-family: Arial, sans-serif;
+  font-family: var(--字体);
+  font-size: var(--字号-正文);
+  line-height: var(--行高-正文);
 }
 
 input,
-button {
+button,
+select,
+textarea {
+  font: inherit;
   background-color: var(--按钮背景);
   color: var(--按钮文字);
   border: 1px solid var(--边框颜色);
@@ -133,23 +225,24 @@ button {
   border-radius: 4px;
 }
 
-/* 自定义滚动条样式 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--主色调);
+  outline-offset: 2px;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @keyframes pulse {

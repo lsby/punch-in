@@ -3,8 +3,8 @@
   "tasks": [
     {
       "label": "_持续生成API接口列表",
-      "type": "npm",
-      "script": "watch:gen:api:list",
+      "type": "shell",
+      "command": "npm run task -- watch:api-list",
       "problemMatcher": [
         {
           "pattern": {
@@ -31,8 +31,8 @@
     },
     {
       "label": "_持续生成API接口类型",
-      "type": "npm",
-      "script": "watch:gen:api:type",
+      "type": "shell",
+      "command": "npm run task -- watch:api-type",
       "problemMatcher": [
         {
           "pattern": {
@@ -58,9 +58,9 @@
       }
     },
     {
-      "label": "_持续生成web组件索引",
-      "type": "npm",
-      "script": "watch:gen:web:index",
+      "label": "_持续生成web页面入口",
+      "type": "shell",
+      "command": "npm run task -- watch:web-page-entry",
       "problemMatcher": [
         {
           "pattern": {
@@ -87,8 +87,8 @@
     },
     {
       "label": "_持续类型检查",
-      "type": "npm",
-      "script": "watch:check:type",
+      "type": "shell",
+      "command": "npm run task -- watch:type",
       "problemMatcher": [
         "$tsc-watch"
       ],
@@ -103,8 +103,8 @@
     },
     {
       "label": "_持续ESLint检查",
-      "type": "npm",
-      "script": "watch:check:lint",
+      "type": "shell",
+      "command": "npm run task -- watch:lint",
       "problemMatcher": {
         "owner": "eslint",
         "source": "eslint",
@@ -139,8 +139,8 @@
     },
     {
       "label": "_运行web后端",
-      "type": "npm",
-      "script": "run:service:dev",
+      "type": "shell",
+      "command": "npm run task -- run:service:dev",
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -152,8 +152,8 @@
     },
     {
       "label": "_运行前端",
-      "type": "npm",
-      "script": "run:web:dev",
+      "type": "shell",
+      "command": "npm run task -- run:web:dev",
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -165,8 +165,8 @@
     },
     {
       "label": "_运行electron后端",
-      "type": "npm",
-      "script": "run:electron:dev",
+      "type": "shell",
+      "command": "npm run task -- run:electron:dev",
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -184,7 +184,7 @@
         "_持续ESLint检查",
         "_持续生成API接口列表",
         "_持续生成API接口类型",
-        "_持续生成web组件索引",
+        "_持续生成web页面入口",
         "_运行web后端",
         "_运行前端"
       ],
@@ -198,7 +198,7 @@
         "_持续ESLint检查",
         "_持续生成API接口列表",
         "_持续生成API接口类型",
-        "_持续生成web组件索引",
+        "_持续生成web页面入口",
         "_运行electron后端",
         "_运行前端"
       ],
@@ -206,8 +206,8 @@
     },
     {
       "label": "_持续生成纯前端本地API列表",
-      "type": "npm",
-      "script": "watch:gen:web:local-api-list",
+      "type": "shell",
+      "command": "npm run task -- watch:local-api-list",
       "problemMatcher": [
         {
           "pattern": {
@@ -234,8 +234,8 @@
     },
     {
       "label": "_持续生成纯前端本地数据库Schema",
-      "type": "npm",
-      "script": "watch:gen:web:local-schema",
+      "type": "shell",
+      "command": "npm run task -- watch:local-schema",
       "problemMatcher": [
         {
           "pattern": {
@@ -262,8 +262,8 @@
     },
     {
       "label": "_运行纯前端",
-      "type": "npm",
-      "script": "run:pure-frontend:dev",
+      "type": "shell",
+      "command": "npm run task -- run:pure-frontend:dev",
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -281,7 +281,7 @@
         "_持续ESLint检查",
         "_持续生成API接口列表",
         "_持续生成API接口类型",
-        "_持续生成web组件索引",
+        "_持续生成web页面入口",
         "_持续生成纯前端本地API列表",
         "_持续生成纯前端本地数据库Schema",
         "_运行纯前端"

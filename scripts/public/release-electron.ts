@@ -2,14 +2,16 @@ import { execFileSync, execSync } from 'child_process'
 import fs from 'fs'
 import open from 'open'
 import path from 'path'
-import readline from 'readline/promises'
 import { fileURLToPath } from 'url'
+import { 读取环境文件明文 } from '../setup/env-crypto-core.mjs'
 import { 写入AppPackageJson, 生成Electron便携资源, 获得Prisma迁移名称组 } from './electron-update-release'
+import { 写入发布信息, 创建当前发布信息 } from './release-info'
 
 let __当前文件名 = fileURLToPath(import.meta.url)
 let __当前目录名 = path.dirname(__当前文件名)
 let 项目根目录 = path.resolve(__当前目录名, '../../')
 let 相对发布目录 = 'release/electron'
+let 打包环境文件名 = '.env.production.electron'
 
 function 寻找内置Csc编译器(): string | null {
   let 框架目录组 = ['C:\\Windows\\Microsoft.NET\\Framework64', 'C:\\Windows\\Microsoft.NET\\Framework']
@@ -49,46 +51,30 @@ async function 移动目录并等待文件句柄释放(源目录: string, 目标
   }
 }
 
-async function 询问是否打包Zip(): Promise<boolean> {
-  if (process.argv.includes('--zip') === true) {
+function 获得是否打包Zip(): boolean {
+  let 是否指定Zip = process.argv.includes('--zip')
+  let 是否指定不生成Zip = process.argv.includes('--nozip') === true || process.argv.includes('--no-zip') === true
+  if (是否指定Zip === true && 是否指定不生成Zip === true) throw new Error('--zip 与 --no-zip 不能同时使用')
+  if (是否指定Zip === true) {
     console.log('📦 检测到 --zip 参数，自动生成 Electron 完整便携压缩包。')
     return true
   }
-  if (process.argv.includes('--nozip') === true || process.argv.includes('--no-zip') === true) {
+  if (是否指定不生成Zip === true) {
     console.log('💡 检测到 --nozip 参数，跳过 ZIP 压缩包打包。')
     return false
   }
-  if (
-    process.argv.includes('--yes') === true ||
-    process.argv.includes('-y') === true ||
-    process.argv.includes('--silent') === true
-  ) {
-    console.log('💡 静默模式且未指定 --zip，默认跳过 ZIP 压缩包打包。')
-    return false
-  }
-
-  let 终端 = readline.createInterface({ input: process.stdin, output: process.stdout })
-  try {
-    let 回答 = await 终端.question('📦 是否打包 Electron 完整便携压缩包 (.zip)？(y/N): ')
-    终端.close()
-    let 确认输入 = 回答.trim().toLowerCase()
-    return 确认输入 === 'y' || 确认输入 === 'yes'
-  } catch (_交互错误) {
-    终端.close()
-    return false
-  }
+  throw new Error('必须通过 --zip 或 --no-zip 明确指定是否生成 Electron ZIP 包')
 }
 
 async function 执行构建(): Promise<void> {
   try {
-    let 是否生成Zip = await 询问是否打包Zip()
+    let 是否生成Zip = 获得是否打包Zip()
 
-    console.log('正在执行前置准备工作 (db:push, check, build)...')
-    execSync('npm run db:push:prod:electron', { stdio: 'inherit', cwd: 项目根目录 })
-    execSync('dotenv -e ./.env/.env.production.electron -- npm run _check:all', { stdio: 'inherit', cwd: 项目根目录 })
-    execSync('dotenv -e ./.env/.env.production.electron -- npm run _build:all', { stdio: 'inherit', cwd: 项目根目录 })
-
-    let 环境源文件 = path.resolve(项目根目录, '.env/.env.production.electron')
+    let 环境源文件相对路径 = process.env['ENV_FILE_PATH']
+    if (环境源文件相对路径 === undefined || 环境源文件相对路径 === '') {
+      throw new Error('❌ 缺少 ENV_FILE_PATH，请通过 npm run task -- public:electron 运行发布流程。')
+    }
+    let 环境源文件 = path.resolve(项目根目录, 环境源文件相对路径)
     let 数据库源文件 = path.resolve(项目根目录, 'db/prod-electron.db')
 
     // 1. 提前检查
@@ -109,7 +95,10 @@ async function 执行构建(): Promise<void> {
 
     // 3. 运行 electron-builder
     console.log('正在启动 electron-builder...')
-    execSync(`npx electron-builder -c.directories.output=${相对发布目录}`, { stdio: 'inherit', cwd: 项目根目录 })
+    execSync(`npx electron-builder -c.directories.output=${相对发布目录}`, {
+      stdio: ['ignore', 'inherit', 'inherit'],
+      cwd: 项目根目录,
+    })
 
     // 4. 定位生成的目录
     let 生成目录 = ''
@@ -149,17 +138,20 @@ async function 执行构建(): Promise<void> {
     let 环境目标路径组: string[] = [
       path.join(process.platform === 'win32' ? path.join(生成目录, 'app') : 生成目录, '.env'),
     ]
+    let winResourcesEnv = path.join(生成目录, 'app/resources/app/.env')
+    if (fs.existsSync(path.dirname(winResourcesEnv)) === true) {
+      环境目标路径组.push(winResourcesEnv)
+    }
     let appResourcesEnv = path.join(生成目录, 'lsby-punch-in.app/Contents/Resources/app/.env')
     if (fs.existsSync(path.dirname(appResourcesEnv)) === true) {
       环境目标路径组.push(appResourcesEnv)
     }
-    let 环境内容 = fs
-      .readFileSync(环境源文件, 'utf8')
+    let 环境内容 = 读取环境文件明文(项目根目录, 环境源文件)
       .replace(/^DB_PATH\s*=.*$/m, 'DB_PATH = "./data/db/prod-electron.db"')
       .replace(/^DB_BACKUP_PATH\s*=.*$/m, 'DB_BACKUP_PATH = "./data/backups"')
     for (let 目标目录 of 环境目标路径组) {
       确保目录存在(目标目录)
-      let 环境目标文件 = path.join(目标目录, '.env.production.electron')
+      let 环境目标文件 = path.join(目标目录, 打包环境文件名)
       fs.writeFileSync(环境目标文件, 环境内容, 'utf8')
       console.log(`✅ 已写入环境变量到 ${环境目标文件}`)
     }
@@ -190,7 +182,7 @@ async function 执行构建(): Promise<void> {
     // 复制更新脚本与写入 package.json
     let 更新脚本源目录 = path.join(__当前目录名, 'updater')
     if (process.platform === 'win32') {
-      for (let 文件名 of ['lsby-punch-in-debug.cmd', 'update.cmd']) {
+      for (let 文件名 of ['app-debug.cmd', 'update.cmd']) {
         let 源路径 = path.join(更新脚本源目录, 文件名)
         let 目标路径 = path.join(生成目录, 文件名)
         fs.copyFileSync(源路径, 目标路径)
@@ -228,11 +220,11 @@ async function 执行构建(): Promise<void> {
           'DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"',
           'APP_RESOURCES_DIR="$( cd "$DIR/../Resources/app" >/dev/null 2>&1 && pwd )"',
           'PORTABLE_ROOT="$( cd "$DIR/../../.." >/dev/null 2>&1 && pwd )"',
-          'if [ -f "$PORTABLE_ROOT/.env/.env.production.electron" ]; then',
-          '  export ENV_FILE_PATH="$PORTABLE_ROOT/.env/.env.production.electron"',
+          `if [ -f "$PORTABLE_ROOT/.env/${打包环境文件名}" ]; then`,
+          `  export ENV_FILE_PATH="$PORTABLE_ROOT/.env/${打包环境文件名}"`,
           '  cd "$PORTABLE_ROOT"',
-          'elif [ -f "$APP_RESOURCES_DIR/.env/.env.production.electron" ]; then',
-          '  export ENV_FILE_PATH="$APP_RESOURCES_DIR/.env/.env.production.electron"',
+          `elif [ -f "$APP_RESOURCES_DIR/.env/${打包环境文件名}" ]; then`,
+          `  export ENV_FILE_PATH="$APP_RESOURCES_DIR/.env/${打包环境文件名}"`,
           '  if [ -d "$PORTABLE_ROOT/data" ]; then',
           '    cd "$PORTABLE_ROOT"',
           '  else',
@@ -250,55 +242,46 @@ async function 执行构建(): Promise<void> {
     // 验证默认数据库的 Prisma migrations
     let Prisma迁移名称组 = 获得Prisma迁移名称组(path.join(appPrisma目标目录, 'prisma/migrations'))
     if (Prisma迁移名称组.length > 0) {
-      let PrismaCli路径 =
+      let PushProdCli路径 =
         process.platform === 'win32'
-          ? path.join(生成目录, 'app/resources/app/node_modules/prisma/build/index.js')
-          : path.join(生成目录, 'lsby-punch-in.app/Contents/Resources/app/node_modules/prisma/build/index.js')
-      let Prisma配置路径 = path.join(appPrisma目标目录, 'prisma.config.ts')
+          ? path.join(生成目录, 'app/resources/app/dist/scripts/db/push-prod.js')
+          : path.join(生成目录, 'lsby-punch-in.app/Contents/Resources/app/dist/scripts/db/push-prod.js')
       let Prisma环境 = {
         ...process.env,
         DB_PATH_PRISMA: `file:${path.join(生成目录, 'data/db/prod-electron.db').replaceAll('\\', '/')}`,
-        NODE_PATH:
-          process.platform === 'win32'
-            ? path.join(生成目录, 'app/resources/app/node_modules')
-            : path.join(生成目录, 'lsby-punch-in.app/Contents/Resources/app/node_modules'),
+        PRISMA_ROOT_DIR: appPrisma目标目录,
       }
-      console.log('正在验证默认数据库的 Prisma migrations...')
-      try {
-        execFileSync(process.execPath, [PrismaCli路径, 'migrate', 'deploy', '--config', Prisma配置路径], {
-          cwd: process.platform === 'win32' ? path.join(生成目录, 'app') : appPrisma目标目录,
-          env: Prisma环境,
-          stdio: 'inherit',
-        })
-      } catch (error) {
-        console.warn('⚠️ 验证 migrations 提示:', error)
-      }
+      console.log('正在验证默认数据库的原生 SQL migrations...')
+      execFileSync(process.execPath, [PushProdCli路径], {
+        cwd: appPrisma目标目录,
+        env: Prisma环境,
+        stdio: ['ignore', 'inherit', 'inherit'],
+      })
     }
 
     if (process.platform === 'win32') {
       // 生成 start.exe (C# 引导器)
       let cscPath = 寻找内置Csc编译器()
       let launcher源文件 = path.join(__当前目录名, 'launcher', 'launcher.cs')
-      let runExe路径 = path.join(生成目录, 'lsby-punch-in-start.exe')
+      let runExe路径 = path.join(生成目录, 'lsby-punch-in.exe')
 
       if (cscPath === null || fs.existsSync(cscPath) === false) {
-        console.warn(`⚠️ 未找到 C# 编译器，跳过 lsby-punch-in-start.exe 的编译。`)
+        throw new Error(`未找到 C# 编译器 csc.exe，无法编译引导器 lsby-punch-in.exe`)
       } else if (fs.existsSync(launcher源文件) === false) {
-        console.warn(`⚠️ 未找到引导器源码: ${launcher源文件}，跳过 lsby-punch-in-start.exe 的编译。`)
+        throw new Error(`未找到引导器源码: ${launcher源文件}，无法编译 lsby-punch-in.exe`)
       } else {
-        console.log('✅ 正在编译引导器 lsby-punch-in-start.exe ...')
-        try {
-          // 使用 /target:exe 避免控制台流异常
-          execSync(
-            `"${cscPath}" /nologo /target:exe /out:"${runExe路径}" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "${launcher源文件}"`,
-            { stdio: 'inherit' },
-          )
-          console.log(`✅ 已生成 ${runExe路径}`)
-        } catch (error) {
-          console.error(`❌ 引导器 run.exe 编译失败:`, error)
-        }
+        console.log('✅ 正在编译引导器 lsby-punch-in.exe ...')
+        // 使用 Windows GUI 子系统，默认只显示托盘图标；控制台由引导器按需创建
+        execSync(
+          `"${cscPath}" /nologo /target:winexe /out:"${runExe路径}" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "${launcher源文件}"`,
+          { stdio: ['ignore', 'inherit', 'inherit'] },
+        )
+        console.log(`✅ 已生成 ${runExe路径}`)
       }
     }
+
+    let 发布信息路径 = 写入发布信息(生成目录, 创建当前发布信息(项目根目录))
+    console.log(`✅ 已写入发布信息: ${发布信息路径}`)
 
     if (是否生成Zip === true) {
       console.log('正在生成 Electron 完整便携压缩包...')

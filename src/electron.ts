@@ -1,28 +1,42 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, screen } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { App } from './app/app'
+import { 应用单例 } from './app/app'
 import { 计算补偿后的窗口配置, 验证并修正窗口 } from './electron/multi-display'
-import { 检查端口可用, 获取随机可用端口 } from './electron/port-utils'
+import { 检查端口可用, 等待端口就绪, 获取随机可用端口 } from './electron/port-utils'
 import { 保存窗口状态, 检查窗口是否在可见区域内, 获取默认窗口位置, 读取窗口状态 } from './electron/window-state'
 import { 环境变量 } from './global/env'
 import { globalLog } from './global/global'
-import { init } from './init/init'
 import { 启动异常兜底 } from './tools/fallback'
 
+let 是否允许退出 = false
+
 async function main(): Promise<void> {
-  启动异常兜底()
+  启动异常兜底(() => 应用单例.close())
   try {
     ipcMain.handle('获取屏幕列表', async () => {
       let sources = await desktopCapturer.getSources({ types: ['screen', 'window'] })
-      return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }))
+      return sources.map((source) => ({ id: source.id, name: source.name, thumbnail: source.thumbnail.toDataURL() }))
     })
-    await init()
-    await new App().run()
+    await 应用单例.run()
   } catch (error) {
     console.error('启动过程中发生错误:', error)
-    app.exit(1) // 必须直接 exit(1)，不能用 quit()，否则会触发正常退出的 0 码，并导致后续的 loadURL 继续执行
+    await 关闭并退出Electron(1)
     throw error // 抛出错误以阻断后续执行
+  }
+}
+
+async function 关闭并退出Electron(退出码: number | null = null): Promise<void> {
+  let 最终退出码 = 退出码
+  try {
+    await 应用单例.close()
+  } catch (错误) {
+    console.error('关闭应用失败:', 错误)
+    最终退出码 = 1
+  } finally {
+    是否允许退出 = true
+    if (最终退出码 === null) app.quit()
+    else app.exit(最终退出码)
   }
 }
 let 已经启动服务器 = false
@@ -56,6 +70,7 @@ async function 创建主窗口(): Promise<void> {
   let 端口 = 环境变量.WEB_PORT
 
   if (开发环境 === false) {
+    端口 = 环境变量.APP_PORT
     // 生产环境下：先处理端口冲突（先检查后启动）
     if ((await 检查端口可用(端口)) === false) {
       端口 = await 获取随机可用端口()
@@ -75,6 +90,16 @@ async function 创建主窗口(): Promise<void> {
     if (已经启动服务器 === false) {
       已经启动服务器 = true
       await main()
+    }
+
+    await log.info(`开发环境: 等待前端开发服务就绪 (127.0.0.1:${端口})...`)
+    let 前端就绪 = await 等待端口就绪(端口, 60, 500)
+    if (前端就绪 === false) {
+      await log.error(
+        `前端服务未能在规定时间内就绪 (127.0.0.1:${端口})，Electron 退出。请检查前端开发服务是否正常启动。`,
+      )
+      await 关闭并退出Electron(1)
+      throw new Error(`前端服务未能在规定时间内就绪 (127.0.0.1:${端口})`)
     }
   }
 
@@ -154,22 +179,21 @@ async function 创建主窗口(): Promise<void> {
     await 验证并修正窗口(主窗口, 保存的状态)
   }
 
-  if (保存的状态 !== null && 使用保存的位置 === true) {
-    if (保存的状态.isMaximized === true) {
-      await log.info('恢复最大化状态')
-      主窗口.maximize()
-    }
-    if (保存的状态.isFullScreen === true) {
-      await log.info('恢复全屏状态')
-      主窗口.setFullScreen(true)
-    }
-  }
-
   主窗口.once('ready-to-show', async () => {
     if (主窗口 !== null) {
       let 显示前的边界 = 主窗口.getBounds()
       await log.info('窗口显示前的边界:', 显示前的边界)
       主窗口.show()
+      if (保存的状态 !== null && 使用保存的位置 === true) {
+        if (保存的状态.isMaximized === true) {
+          await log.info('恢复最大化状态')
+          主窗口.maximize()
+        }
+        if (保存的状态.isFullScreen === true) {
+          await log.info('恢复全屏状态')
+          主窗口.setFullScreen(true)
+        }
+      }
     }
   })
 
@@ -181,7 +205,8 @@ async function 创建主窗口(): Promise<void> {
     await 主窗口.loadURL(`http://127.0.0.1:${端口}/`)
   } catch (error) {
     await log.error('主窗口加载失败:', error)
-    app.exit(1)
+    await 关闭并退出Electron(1)
+    throw error
   }
 
   主窗口.on('close', async () => {
@@ -202,6 +227,11 @@ async function Electron就绪(): Promise<void> {
 if (获得单实例锁 === false) {
   app.quit()
 } else {
+  app.on('before-quit', (事件) => {
+    if (是否允许退出 === true) return
+    事件.preventDefault()
+    void 关闭并退出Electron()
+  })
   app.on('ready', Electron就绪)
   app.on('second-instance', () => {
     if (主窗口 !== null) {

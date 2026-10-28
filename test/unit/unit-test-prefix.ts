@@ -1,3 +1,3 @@
-import { App } from '../../src/app/app'
+import { init } from '../../src/init/init'
 
-await new App().run().catch(console.error)
+await init()

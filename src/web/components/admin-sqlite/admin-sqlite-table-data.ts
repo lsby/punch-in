@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { JSON值 } from '../../../model/json-value'
 import { 组件基类 } from '../../base/base'
 import { API管理器 } from '../../global/manager/api-manager'
 import { 显示确认对话框 } from '../../global/manager/dialog-manager'
@@ -5,15 +7,17 @@ import { 关闭模态框, 显示模态框 } from '../../global/manager/modal-man
 import { 警告提示 } from '../../global/manager/toast-manager'
 import { 创建元素 } from '../../global/tools/create-element'
 import { 主要按钮, 普通按钮 } from '../general/base/base-button'
-import { 表单, 表单项配置 } from '../general/form/form'
-import { 数字输入框, 普通输入框 } from '../general/form/form-input'
+import { 动态表单, 动态表单项配置 } from '../general/form/form'
+import { 普通输入框 } from '../general/form/form-input'
 import { 表格组件 } from '../general/table/table'
 import { 数据表加载数据参数 } from '../general/table/types'
 
 type 发出事件类型 = {}
 type 监听事件类型 = {}
 
-type 数据项 = Record<string, string | number>
+let 数据库标量模式 = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
+
+type 数据项 = Record<string, JSON值>
 
 export class 数据库数据组件 extends 组件基类<发出事件类型, 监听事件类型> {
   static {
@@ -58,40 +62,27 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
     })
     this.shadow.appendChild(this.表格内容容器)
 
-    await this.初始化表格()
+    await this.初始化表格(this.渲染信号)
   }
 
   public 设置表名(表名: string): void {
     this.表名值 = 表名
-    void this.初始化表格()
+    this.安全执行(async (): Promise<void> => await this.初始化表格(this.渲染信号))
   }
 
-  private async 获取表结构(): Promise<void> {
+  private async 获取表结构(信号: AbortSignal): Promise<void> {
     let 表名 = this.表名值
     if (表名 === null) return
-
-    try {
-      let 结果 = await API管理器.请求postJson('/api/admin-sqlite/get-table-schema', { tableName: 表名 })
-      switch (结果.status) {
-        case 'success':
-          this.主键列 = 结果.data.columns.filter((列) => 列.pk === 1).map((列) => 列.name)
-          this.列列表 = 结果.data.columns
-          break
-        case 'fail':
-        case 'unexpected':
-          console.error('获取表结构失败:', 结果)
-          this.主键列 = []
-          this.列列表 = []
-          break
-      }
-    } catch (错误) {
-      console.error('获取表结构失败:', 错误)
-      this.主键列 = []
-      this.列列表 = []
-    }
+    let 结果 = await API管理器.请求postJson并处理错误(
+      '/api/admin-sqlite/get-table-schema',
+      { tableName: 表名 },
+      { 信号 },
+    )
+    this.主键列 = 结果.columns.filter((列) => 列.pk === 1).map((列) => 列.name)
+    this.列列表 = 结果.columns
   }
 
-  private async 初始化表格(): Promise<void> {
+  private async 初始化表格(信号: AbortSignal): Promise<void> {
     if (this.表格内容容器 === null) return
     let 任务ID = ++this.初始化任务ID
     let 表名 = this.表名值
@@ -108,23 +99,39 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
       return
     }
 
-    await this.获取表结构()
+    try {
+      await this.获取表结构(信号)
+    } catch (错误) {
+      if (任务ID !== this.初始化任务ID) return
+      if (信号.aborted === true) throw 错误
+      if (this.消息容器 !== null) {
+        this.消息容器.textContent = `加载表结构失败：${错误 instanceof Error ? 错误.message : String(错误)}`
+        this.消息容器.style.color = 'var(--错误前景)'
+        this.消息容器.style.display = 'flex'
+      }
+      return
+    }
 
     if (任务ID !== this.初始化任务ID) return
 
     if (this.消息容器 !== null) {
+      this.消息容器.style.color = 'var(--文本颜色)'
       this.消息容器.style.display = 'none'
     }
 
     // 创建表格
     this.表格组件 = new 表格组件<数据项>({
+      行键: (数据项, 索引): string =>
+        this.主键列.length === 0
+          ? `${JSON.stringify(数据项)}-${索引}`
+          : this.主键列.map((列名) => String(数据项[列名])).join('::'),
       列配置: this.列列表.map((列) => ({ 字段名: 列.name, 显示名: 列.name, 可排序: true, 可筛选: true })),
       每页数量: 20,
       操作列表: [
         {
           名称: '编辑',
-          回调: async (数据项: 数据项): Promise<void> => {
-            await this.显示编辑模态框(数据项)
+          回调: (数据项: 数据项): void => {
+            this.显示编辑模态框(数据项)
           },
         },
         {
@@ -139,8 +146,8 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
       顶部操作列表: [
         {
           名称: '添加',
-          回调: async (): Promise<void> => {
-            await this.显示添加模态框()
+          回调: (): void => {
+            this.显示添加模态框()
           },
         },
       ],
@@ -153,7 +160,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
         try {
           // 构建排序语句
           let 排序语句 = ''
-          if (参数.排序列表 !== undefined && 参数.排序列表.length > 0) {
+          if (参数.排序列表.length > 0) {
             let 排序条件列表 = 参数.排序列表.map((排序) => `\`${String(排序.field)}\` ${排序.direction.toUpperCase()}`)
             排序语句 = ' ORDER BY ' + 排序条件列表.join(', ')
           }
@@ -161,7 +168,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
           // 构建筛选语句
           let 筛选语句 = ''
           let 筛选参数: (string | number)[] = []
-          if (参数.筛选条件 !== undefined && Object.keys(参数.筛选条件).length > 0) {
+          if (Object.keys(参数.筛选条件).length > 0) {
             let 筛选条件列表: string[] = []
             for (let [列名, 值] of Object.entries(参数.筛选条件)) {
               if (值 !== '') {
@@ -176,30 +183,30 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
           // 查询总数
           let 总数sql = `SELECT COUNT(*) as count FROM \`${表名}\`` + 筛选语句
-          let 总数结果 = await API管理器.请求postJson('/api/admin-sqlite/execute-query', {
-            sql: 总数sql,
-            parameters: 筛选参数,
-          })
+          let 总数结果 = await API管理器.请求postJson并处理错误(
+            '/api/admin-sqlite/execute-query',
+            { sql: 总数sql, parameters: 筛选参数 },
+            { 信号: 参数.信号 },
+          )
 
-          let 总数 = 0
-          if (总数结果.status === 'success' && 总数结果.data.rows.length > 0 && 总数结果.data.rows[0] !== undefined) {
-            总数 = parseInt(String(总数结果.data.rows[0]['count'] ?? 0))
-          }
+          let 计数行 = 总数结果.rows[0]
+          if (总数结果.rows.length !== 1 || 计数行 === undefined) throw new Error('查询表格总数时未得到唯一计数行')
+          let 总数 = z.number().int().nonnegative().parse(计数行['count'])
 
           // 查询数据
           let 偏移 = (参数.页码 - 1) * 参数.每页数量
           let sql = `SELECT * FROM \`${表名}\`` + 筛选语句 + 排序语句 + ` LIMIT ? OFFSET ?`
           筛选参数.push(参数.每页数量, 偏移)
 
-          let 结果 = await API管理器.请求postJson('/api/admin-sqlite/execute-query', { sql, parameters: 筛选参数 })
-
-          if (结果.status === 'success') {
-            return { 数据: 结果.data.rows, 总数 }
-          }
-          return { 数据: [], 总数: 0 }
+          let 结果 = await API管理器.请求postJson并处理错误(
+            '/api/admin-sqlite/execute-query',
+            { sql, parameters: 筛选参数 },
+            { 信号: 参数.信号 },
+          )
+          return { 数据: 结果.rows, 总数 }
         } catch (错误) {
-          console.error('查询失败:', 错误)
-          return { 数据: [], 总数: 0 }
+          if (参数.信号.aborted === true || 信号.aborted === true) throw 错误
+          throw 错误
         }
       },
       宿主样式: { margin: '20px' },
@@ -209,28 +216,28 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
     this.表格内容容器.appendChild(this.表格组件)
   }
 
-  private async 显示添加模态框(): Promise<void> {
+  private 显示添加模态框(): void {
     let 表名 = this.表名值
     if (表名 === null) return
 
     let 内容容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } })
 
     // 创建表单项列表
-    let 表单项列表: 表单项配置[] = []
+    let 表单项列表: 动态表单项配置[] = []
 
     for (let 列 of this.列列表) {
       let 列名 = 列.name
       let 列类型 = 列.type
       let 输入框 =
         this.获得输入框类型(列类型) === 'number'
-          ? new 数字输入框({ 占位符: `请输入 ${列名}` })
+          ? new 普通输入框({ 占位符: `请输入 ${列名}`, 类型: 'number' })
           : new 普通输入框({ 占位符: `请输入 ${列名}` })
 
       表单项列表.push({ 键: 列名, 组件: 输入框, 标签: 列名 })
     }
 
     // 创建表单
-    let 表单实例 = new 表单<数据项>({ 项列表: 表单项列表 })
+    let 表单实例 = new 动态表单({ 项列表: 表单项列表 })
 
     内容容器.appendChild(表单实例)
 
@@ -263,17 +270,17 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
     按钮容器.appendChild(确认按钮)
     内容容器.appendChild(按钮容器)
 
-    await 显示模态框({ 标题: '添加数据', 可关闭: true, 宽度: '500px' }, 内容容器)
+    显示模态框({ 标题: '添加数据', 可关闭: true, 宽度: '500px' }, 内容容器)
   }
 
-  private async 显示编辑模态框(行数据: 数据项): Promise<void> {
+  private 显示编辑模态框(行数据: 数据项): void {
     let 表名 = this.表名值
     if (表名 === null) return
 
     let 内容容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } })
 
     // 创建表单项列表
-    let 表单项列表: 表单项配置[] = []
+    let 表单项列表: 动态表单项配置[] = []
 
     for (let 列 of this.列列表) {
       let 列名 = 列.name
@@ -282,14 +289,14 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
       let 输入框 =
         this.获得输入框类型(列类型) === 'number'
-          ? new 数字输入框({ 值: String(当前值 ?? '') })
+          ? new 普通输入框({ 值: String(当前值 ?? ''), 类型: 'number' })
           : new 普通输入框({ 值: String(当前值 ?? '') })
 
       表单项列表.push({ 键: 列名, 组件: 输入框, 标签: 列名 })
     }
 
     // 创建表单
-    let 表单实例 = new 表单<数据项>({ 项列表: 表单项列表 })
+    let 表单实例 = new 动态表单({ 项列表: 表单项列表 })
 
     内容容器.appendChild(表单实例)
 
@@ -322,10 +329,10 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
     按钮容器.appendChild(确认按钮)
     内容容器.appendChild(按钮容器)
 
-    await 显示模态框({ 标题: '编辑数据', 可关闭: true, 宽度: '500px' }, 内容容器)
+    显示模态框({ 标题: '编辑数据', 可关闭: true, 宽度: '500px' }, 内容容器)
   }
 
-  private async 保存新行(表单实例: 表单<数据项>): Promise<void> {
+  private async 保存新行(表单实例: 动态表单): Promise<void> {
     let 表名 = this.表名值
     if (表名 === null) return
 
@@ -333,7 +340,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
     let 列列表: string[] = []
     let 值列表: string[] = []
-    let 参数列表: (string | number)[] = []
+    let 参数列表: z.infer<typeof 数据库标量模式>[] = []
 
     for (let [列名, 值] of Object.entries(数据)) {
       let 列 = this.列列表.find((c) => c.name === 列名)
@@ -350,6 +357,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
       列列表.push(`\`${列名}\``)
       值列表.push('?')
+      if (typeof 值 !== 'string' && typeof 值 !== 'number') throw new Error(`列 ${列名} 不是可写入的基础值`)
       参数列表.push(值)
     }
 
@@ -367,7 +375,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
     }
   }
 
-  private async 保存编辑行(行数据: 数据项, 表单实例: 表单<数据项>): Promise<void> {
+  private async 保存编辑行(行数据: 数据项, 表单实例: 动态表单): Promise<void> {
     let 表名 = this.表名值
     if (表名 === null) return
 
@@ -380,10 +388,11 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
     // 构建 SET 语句
     let 设置条件列表: string[] = []
-    let 参数列表: (string | number)[] = []
+    let 参数列表: z.infer<typeof 数据库标量模式>[] = []
 
     for (let [列名, 值] of Object.entries(数据)) {
       设置条件列表.push(`\`${列名}\` = ?`)
+      if (typeof 值 !== 'string' && typeof 值 !== 'number') throw new Error(`列 ${列名} 不是可写入的基础值`)
       参数列表.push(值)
     }
 
@@ -393,7 +402,7 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
       let 主键值 = 行数据[主键列名]
       if (主键值 === undefined) throw new Error('意外的空数据')
       where条件列表.push(`\`${主键列名}\` = ?`)
-      参数列表.push(主键值)
+      参数列表.push(数据库标量模式.parse(主键值))
     }
 
     let sql = `UPDATE \`${表名}\` SET ${设置条件列表.join(', ')} WHERE ${where条件列表.join(' AND ')}`
@@ -421,13 +430,13 @@ export class 数据库数据组件 extends 组件基类<发出事件类型, 监�
 
     // 构建 WHERE 语句
     let where条件列表: string[] = []
-    let 参数列表: (string | number)[] = []
+    let 参数列表: z.infer<typeof 数据库标量模式>[] = []
 
     for (let 主键列名 of this.主键列) {
       let 主键值 = 行数据[主键列名]
       if (主键值 === undefined) throw new Error('意外的空数据')
       where条件列表.push(`\`${主键列名}\` = ?`)
-      参数列表.push(主键值)
+      参数列表.push(数据库标量模式.parse(主键值))
     }
 
     let sql = `DELETE FROM \`${表名}\` WHERE ${where条件列表.join(' AND ')}`

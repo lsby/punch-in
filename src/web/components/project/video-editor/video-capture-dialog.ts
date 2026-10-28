@@ -1,6 +1,6 @@
 import { 主要按钮 } from '../../../components/general/base/base-button'
 import { 普通下拉框 } from '../../../components/general/form/form-select'
-import { 切换开关 } from '../../../components/general/form/form-switch'
+import { 开关组件 } from '../../../components/general/form/form-switch'
 import { 关闭模态框, 显示模态框 } from '../../../global/manager/modal-manager'
 import { 创建元素 } from '../../../global/tools/create-element'
 
@@ -38,8 +38,8 @@ export async function 弹出Electron屏幕选择(
   return new Promise(async (resolve) => {
     let 屏幕列表 = await api.获取屏幕列表()
     let 容器 = 创建元素('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } })
-    let 录制音频开关 = new 切换开关({ 标签: '录制系统音频', 值: true })
-    let 录制麦克风开关 = new 切换开关({ 标签: '录制麦克风', 值: true })
+    let 录制音频开关 = new 开关组件({ 标签: '录制系统音频', 值: true })
+    let 录制麦克风开关 = new 开关组件({ 标签: '录制麦克风', 值: true })
     let 码率选择 = 创建码率选择器(当前视频码率, 是否锁定视频码率)
     let 内容容器 = 创建元素('div', {
       style: {
@@ -112,10 +112,7 @@ export async function 弹出Electron屏幕选择(
       卡片.append(缩略图, 名称)
       内容容器.append(卡片)
     }
-    await 显示模态框(
-      { 标题: '选择要录制的屏幕或窗口', 宽度: '800px', 高度: '600px', 关闭回调: () => resolve(null) },
-      容器,
-    )
+    显示模态框({ 标题: '选择要录制的屏幕或窗口', 宽度: '800px', 高度: '600px', 关闭回调: () => resolve(null) }, 容器)
   })
 }
 
@@ -125,7 +122,7 @@ export async function 弹出浏览器采集设置(
 ): Promise<浏览器采集设置 | null> {
   return new Promise((resolve) => {
     let 容器 = 创建元素('div', { style: { padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' } })
-    let 麦克风 = new 切换开关({ 标签: '录制麦克风', 值: true })
+    let 麦克风 = new 开关组件({ 标签: '录制麦克风', 值: true })
     let 码率选择 = 创建码率选择器(当前视频码率, 是否锁定视频码率)
     let 继续按钮 = new 主要按钮({
       文本: '继续选择屏幕',

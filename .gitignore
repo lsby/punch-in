@@ -3,6 +3,11 @@
 # =========================
 /node_modules
 /OCR-portable-python*
+/.env/*.decode
+/.project-config.key
+/.external-lfs/recovery/
+/.external-lfs/operation.lock
+/test/unit/unit-test.test.ts
 
 # =========================
 # 编译与打包产物
@@ -11,6 +16,7 @@
 /out
 /package
 /release
+/release-info.json
 /android
 
 # =========================
@@ -29,6 +35,8 @@
 # 数据与本地状态
 # =========================
 /db/*
+/data/window-state.json
+/.setup-state.json
 
 # =========================
 # MAC
@@ -40,7 +48,13 @@
 # =========================
 !**/.gitkeep
 
-# =========================
-# 敏感配置
-# =========================
+# 项目发布密钥配置
 /scripts/public/release-oss-aliyun-config.json
+
+# =========================
+# 临时文件与不需要打包的目录
+# =========================
+/tmp/
+*.docx
+*.pdf
+*.pptx

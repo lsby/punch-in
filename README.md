@@ -115,7 +115,7 @@ LOCAL_MODE = true
 3. 执行同步：
 
 ```bash
-pnpm run public:oss:aliyun
+pnpm run public:oss:aliyun -- --yes
 ```
 
 同步脚本会自动使用纯前端生产环境构建、按 MD5 比较本地和云端文件、并发上传变更，并在确认后删除目标目录中的多余文件。HTML 和 Service Worker 使用 `no-cache`，带内容哈希的静态资源使用长期缓存。

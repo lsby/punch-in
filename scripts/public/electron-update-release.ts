@@ -4,8 +4,10 @@ import fs from 'fs'
 import path from 'path'
 import { z } from 'zod'
 
-let 仓库模式 = z.union([z.string(), z.object({ type: z.string().optional(), url: z.string() })]).optional()
-let 包信息模式 = z.object({ name: z.string(), version: z.string(), repository: 仓库模式 })
+let 仓库模式 = z
+  .union([z.string(), z.object({ type: z.string().optional(), url: z.string() }).passthrough()])
+  .optional()
+let 包信息模式 = z.object({ name: z.string(), version: z.string(), repository: 仓库模式 }).passthrough()
 
 export function 获得Prisma迁移名称组(迁移目录: string): string[] {
   if (fs.existsSync(迁移目录) === false) return []
@@ -73,7 +75,7 @@ export async function 生成Electron便携资源(项目根目录: string, 便携
     if (fs.existsSync(资源路径) === true) {
       fs.rmSync(资源路径, { force: true })
     }
-    execSync(`ditto -c -k --sequesterRsrc "${便携包目录}" "${资源路径}"`, { stdio: 'inherit' })
+    execSync(`ditto -c -k --sequesterRsrc "${便携包目录}" "${资源路径}"`, { stdio: ['ignore', 'inherit', 'inherit'] })
   } else {
     await 创建便携压缩包(便携包目录, 资源路径)
   }

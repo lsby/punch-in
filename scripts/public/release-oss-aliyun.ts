@@ -4,7 +4,6 @@ import crypto from 'crypto'
 import { config as 加载环境文件 } from 'dotenv'
 import fs from 'fs'
 import path from 'path'
-import readline from 'readline/promises'
 import { z } from 'zod'
 
 let 项目根目录 = path.resolve(import.meta.dirname, '../../')
@@ -43,7 +42,7 @@ function 执行pnpm(参数: string[]): void {
   let 是否Windows = process.platform === 'win32'
   let 命令 = 是否Windows === true ? 'cmd.exe' : 'pnpm'
   let 完整参数 = 是否Windows === true ? ['/d', '/s', '/c', 'pnpm', ...参数] : 参数
-  execFileSync(命令, 完整参数, { cwd: 项目根目录, env: process.env, stdio: 'inherit' })
+  execFileSync(命令, 完整参数, { cwd: 项目根目录, env: process.env, stdio: ['ignore', 'inherit', 'inherit'] })
 }
 
 function 构建纯前端应用(云端目标目录: string): void {
@@ -144,16 +143,8 @@ function 计算变更(
   return { 上传, 删除 }
 }
 
-async function 请求确认(上传数量: number, 删除数量: number): Promise<boolean> {
-  if (process.argv.includes('--yes') === true || process.argv.includes('-y') === true) return true
-  let 终端 = readline.createInterface({ input: process.stdin, output: process.stdout })
-  try {
-    let 回答 = await 终端.question(`将上传或更新 ${上传数量} 个文件，并删除 ${删除数量} 个云端文件。继续？(Y/n): `)
-    let 标准回答 = 回答.trim().toLowerCase()
-    return 标准回答 === '' || 标准回答 === 'y' || 标准回答 === 'yes'
-  } finally {
-    终端.close()
-  }
+function 已确认同步(): boolean {
+  return process.argv.includes('--yes') === true || process.argv.includes('-y') === true
 }
 
 async function 执行上传(客户端: OSS, 任务列表: 上传任务[]): Promise<void> {
@@ -213,8 +204,8 @@ async function 执行同步(): Promise<void> {
     return
   }
   for (let 云端键 of 变更.删除) console.log(`[待删除] ${云端键}`)
-  if ((await 请求确认(变更.上传.length, 变更.删除.length)) === false) {
-    console.log('已取消同步。')
+  if (已确认同步() === false) {
+    console.log('未执行云端变更。确认列表后请添加 --yes 或 -y 参数重新运行。')
     return
   }
   await 执行上传(客户端, 变更.上传)

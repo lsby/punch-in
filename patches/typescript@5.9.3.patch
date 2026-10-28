@@ -1,0 +1,66 @@
+diff --git a/lib/_tsc.js b/lib/_tsc.js
+--- a/lib/_tsc.js
++++ b/lib/_tsc.js
+@@ -30748,7 +30748,10 @@ var Parser;
+   function parseTypeQuery() {
+     const pos = getNodePos();
+     parseExpected(114 /* TypeOfKeyword */);
+-    const entityName = parseLeftHandSideExpressionOrHigher();
++    const entityName = parseEntityName(
++      /*allowReservedWords*/
++      true
++    );
+     const typeArguments = !scanner.hasPrecedingLineBreak() ? tryParseTypeArguments() : void 0;
+     return finishNode(factory2.createTypeQueryNode(entityName, typeArguments), pos);
+   }
+@@ -90898,7 +90901,7 @@ var visitEachChildTable = {
+   [187 /* TypeQuery */]: function visitEachChildOfTypeQueryNode(node, visitor, context, nodesVisitor, nodeVisitor, _tokenVisitor) {
+     return context.factory.updateTypeQueryNode(
+       node,
+-      Debug.checkDefined(nodeVisitor(node.exprName, visitor, isExpression)),
++      Debug.checkDefined(nodeVisitor(node.exprName, visitor, isEntityName)),
+       nodesVisitor(node.typeArguments, visitor, isTypeNode)
+     );
+   },
+@@ -114456,7 +114459,7 @@ function transformDeclarations(context) {
+     if (canProduceDiagnostic && !suppressNewDiagnosticContexts) {
+       getSymbolAccessibilityDiagnostic = createGetSymbolAccessibilityDiagnosticForNode(input);
+     }
+-    if (isTypeQueryNode(input) && isEntityName(input.exprName)) {
++    if (isTypeQueryNode(input)) {
+       checkEntityNameVisibility(input.exprName, enclosingDeclaration);
+     }
+     if (shouldEnterSuppressNewDiagnosticsContextContext) {
+diff --git a/lib/typescript.js b/lib/typescript.js
+--- a/lib/typescript.js
++++ b/lib/typescript.js
+@@ -35009,7 +35009,10 @@ var Parser;
+   function parseTypeQuery() {
+     const pos = getNodePos();
+     parseExpected(114 /* TypeOfKeyword */);
+-    const entityName = parseLeftHandSideExpressionOrHigher();
++    const entityName = parseEntityName(
++      /*allowReservedWords*/
++      true
++    );
+     const typeArguments = !scanner2.hasPrecedingLineBreak() ? tryParseTypeArguments() : void 0;
+     return finishNode(factory2.createTypeQueryNode(entityName, typeArguments), pos);
+   }
+@@ -95509,7 +95512,7 @@ var visitEachChildTable = {
+   [187 /* TypeQuery */]: function visitEachChildOfTypeQueryNode(node, visitor, context, nodesVisitor, nodeVisitor, _tokenVisitor) {
+     return context.factory.updateTypeQueryNode(
+       node,
+-      Debug.checkDefined(nodeVisitor(node.exprName, visitor, isExpression)),
++      Debug.checkDefined(nodeVisitor(node.exprName, visitor, isEntityName)),
+       nodesVisitor(node.typeArguments, visitor, isTypeNode)
+     );
+   },
+@@ -119249,7 +119252,7 @@ function transformDeclarations(context) {
+     if (canProduceDiagnostic && !suppressNewDiagnosticContexts) {
+       getSymbolAccessibilityDiagnostic = createGetSymbolAccessibilityDiagnosticForNode(input);
+     }
+-    if (isTypeQueryNode(input) && isEntityName(input.exprName)) {
++    if (isTypeQueryNode(input)) {
+       checkEntityNameVisibility(input.exprName, enclosingDeclaration);
+     }
+     if (shouldEnterSuppressNewDiagnosticsContextContext) {

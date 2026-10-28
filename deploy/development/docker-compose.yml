@@ -4,14 +4,20 @@ services:
     build:
       context: ../../
       dockerfile: ./deploy/development/dockerfile
+      secrets:
+        - app_env
     ports:
-      - 3000:37190
+      - '${DOCKER_PORT:?缺少环境变量 DOCKER_PORT}:${APP_PORT:?缺少环境变量 APP_PORT}'
     env_file:
       - ../../.env/.env.development.web
     restart: always
     volumes:
       - ../../db:/opt/app/db
+      - ../../.env/.env.development.web:/opt/app/.env/.env.development.web:ro
     logging:
       options:
         max-size: '100m'
         max-file: '5'
+secrets:
+  app_env:
+    file: ../../.env/.env.development.web
