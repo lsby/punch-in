@@ -1,9 +1,9 @@
 import { CompiledQuery, Kysely } from 'kysely'
-import { 环境变量 } from '../../src/global/env'
+import { 获得环境变量 } from '../../src/global/env'
 import { DB } from '../../src/types/db'
 
 export async function cleanDB(db: Kysely<DB>): Promise<void> {
-  let 数据库类型 = 环境变量.DB_TYPE
+  let 数据库类型 = 获得环境变量().DB_TYPE
 
   switch (数据库类型) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -27,15 +27,15 @@ export async function cleanDB(db: Kysely<DB>): Promise<void> {
       // 关闭外键约束
       await db.executeQuery(CompiledQuery.raw('PRAGMA foreign_keys = OFF;', []))
 
-      // 开始事务
-      await db.transaction().execute(async (事务) => {
-        for (let 语句 of 删除语句) {
-          await 事务.executeQuery(CompiledQuery.raw(语句, []))
-        }
-      })
-
-      // 打开外键约束
-      await db.executeQuery(CompiledQuery.raw('PRAGMA foreign_keys = ON;', []))
+      try {
+        await db.transaction().execute(async (事务) => {
+          for (let 语句 of 删除语句) {
+            await 事务.executeQuery(CompiledQuery.raw(语句, []))
+          }
+        })
+      } finally {
+        await db.executeQuery(CompiledQuery.raw('PRAGMA foreign_keys = ON;', []))
+      }
 
       break
     }

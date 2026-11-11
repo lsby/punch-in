@@ -1,54 +1,79 @@
 # 测试规范与机制说明
 
-## 端到端测试 (E2E Testing)
-
-- **概念与定位**: 模拟用户实际操作进行测试，验证应当贴近真实行为。
-- **目录结构**: 用例统一存放在 `test/e2e/` 目录下。
-- **验证边界原则**:
-  - 在核心运行过程中必须通过接口调用或 UI 操作, 严禁直接绕过业务的入口逻辑。
-  - **黑盒执行**: 测试执行过程应是黑盒的, 禁止通过 API 接口, 数据库句柄伪造初始状态。
-  - **灰盒验证**: 验证过程可以是灰盒的, 允许通过数据库句柄等手段断言和验证底层数据结果。
-- **演示模式 (Demo Mode)**:
-  - 这是端到端测试的一个变种，遇到特定的函数将暂停并弹出提示，等待用户点击确认后继续。
-  - **隔离原则**: 演示模式的变量应该仅仅用来控制浏览器界面的可见性、视觉反馈效果以及减慢等待时间，绝对**不应该**因为演示模式的开启而改变核心业务操作、断言逻辑或者测试数据。确保演示效果跟在无头环境下跑测试的行为完全一致。
-  - 演示交互模型参见：`src/model/test-interactive/`。
-  - _开发建议_: 调试代码时，总是使用非演示模式来快速测试。
-- **运行命令**:
-  - 运行 `npm run test:e2e` 支持交互选择、`--all` 全量执行、指定测试文件名。
-  - 参数支持 `--auto` (无头模式) 或 `--demo` (演示模式)。
-  - 测试结束后默认在 `test-outputs/playwright-report/index.html` 生成 Playwright 测试报告。
-
-## 需求测试 (Requirement Testing)
-
-- **概念与定位**: 以业务需求和验收点为中心, 不限制具体测试技术。核心模型与使用说明见 `src/model/test-requirement/README.md`。
-- **目录结构与约定**:
-  - 存放在 `test/requirement/`。每个业务需求拥有一个独立的子目录。
-  - 需求模型统一命名为 `model.ts`，可执行入口统一命名为 `index.spec.ts`。参考：`test/requirement/demo/`。
-  - 所有目录、文件、任务和配置统一使用 `requirement` 命名, **不建立平行测试体系**。
-- **流程规范**:
-  - `scripts/test/check-requirement-coverage.ts` 会自动递归扫描并统计覆盖率，新增需求无需手动注册。
-  - 测试初始化阶段可直接准备数据，但**业务行为和观察**必须通过真实业务入口完成，并返回符合项目证据策略的证据。
-  - 演示模式只控制展示和速度, 同样**不得改变**测试的流程, 断言, 证据或核心数据。
-- **运行命令**:
-  - 更新模型后执行 `npm run task -- test:requirement:coverage` 刷新覆盖率。
-  - 执行测试使用 `npm run test:requirement`（支持交互、`--all` 全量、`--scenario=<流程名>`、`--requirement=<需求名>`、`--auto` / `--demo`）。
-  - 选中人工验收流程时会询问是否跳过（可用 `--skip-manual` / `--no-skip-manual` 指定）。非 TTY 环境默认跳过人工验收；不跳过时，非演示模式的人工确认会以"需人工验收"明确失败。
-  - 通过任务系统运行时，流程、演示模式和人工验收策略会在覆盖关系检查及测试执行前集中收集。可使用 `npm run task -- test:requirement --prepare-only -- <参数>` 只确认最终计划。
-  - 测试快照默认仅保留最近10个，显式清空请运行 `npm run task -- clean:requirement-snapshots`。
-  - 生成报告位于 `test-outputs/requirement-report/index.html`，包含 Playwright HTML 报告与业务证据附件。
+项目提供**单元测试**、**集成测试**与**需求测试**。浏览器端到端用例作为需求流程运行，也可以在同一条流程中结合其他手段验证。
 
 ## 单元测试 (Unit Testing)
 
-- **概念与定位**: 只测试某一个单独的模块, 例如单个接口。
-- **目录结构**: 采用与目标代码同目录 (Co-location) 的存放方式, 例如 `src/interface/demo/base/add/t01.test.ts`。
-- **运行命令**:
-  - `npm run test:unit` 支持交互选择，或通过参数控制: `--all` 全量执行, `--filter <正则>` 筛选接口, `--no-coverage` 跳过覆盖率生成, `--open` 自动打开报告。
-  - 默认无需额外参数即自动生成代码覆盖率与测试报告至 `test-outputs/coverage/index.html`。
+- **定位与目录**: 测试单个独立模块（如单个接口），与目标代码同目录存放（如 `src/interface/demo/base/add/t01.test.ts`）。
+- **入口与命令**:
+  - 由 `scripts/test/unit/run-test.ts` 驱动。
+  - 运行 `npm run test:unit`（支持交互选择、`--all` 全量、`--filter <正则>` 筛选、`--no-coverage` 跳过覆盖率、`--open` 打开报告），默认生成覆盖率与测试报告至 `test-outputs/coverage/index.html`。
 
 ## 集成测试 (Integration Testing)
 
-- **概念与定位**: 测试一系列单元的组合运行情况。借助接口两用性, 可以在不构造服务器环境的情况下, 对接口逻辑进行直接调用。
-- **目录结构**: 集成级别的测试应当放在 `test/integration/` 下。参考 `test/integration/demo.ts`。
-- **运行命令**:
-  - `npm run test:integration` 支持交互选择, `--all` 全量执行, 或直接指定文件名 (如 `demo.ts`), 及通过 `--open` 自动打开报告。
-  - 默认自动收集用例执行日志与状态, 生成 HTML 与 JSON 测试报告至 `test-outputs/integration-report/index.html`。
+- **定位**: 测试多模块组合运行，可借助接口两用性在不启动服务器的情况下直接调用接口逻辑。
+- **目录与编写约定**:
+  - 存放在 `test/integration/`（参考 `test/integration/demo.ts`），默认导出无参构造的 `集成测试` 子类。
+  - 构造函数仅声明名称与配置，数据准备和断言放在 `运行()` 内；模块导入与实例构造阶段不得启动数据库或任务资源。
+- **运行边界**: 通过抛错表达失败，禁止自行调用 `process.exit()`；自建资源在 `finally` 中释放，共享单例随命令结束统一退出。
+- **入口与命令**:
+  - 由 `scripts/test/integration/run-integration.ts` 驱动。
+  - 运行 `npm run test:integration`（支持交互选择、`--all` 全量、指定文件名、`--open` 打开报告），报告输出至 `test-outputs/integration-report/index.html`。
+
+## 需求测试 (Requirement Testing)
+
+- **定位与模型**: 以业务需求和验收点为中心，通过命令、HTTP 或浏览器等方式执行流程，并由代码判定结果。核心领域模型（需求、验收点、状态迁移、行为、观察、步骤附件、选择等）详见 `src/model/test-requirement/README.md`。
+- 手写用例和使用 MCP 录制的约定见 [AI 需求测试提示词](requirement-test-ai.md)。
+- **执行边界**:
+  - 每次流程尝试都会清空并初始化同一份 Web 测试数据库，再准备业务数据和工具。整条流程通过后才记下其证明的验收点。
+  - 需要后端的流程在每次尝试时启动测试服务。`工具.服务地址()` 提供地址。工具按步骤记录收到的标准输出和错误输出，`工具.后端日志.读取()` 可查看当前步骤已收到的日志。
+  - `工具.浏览器` 可按名称打开、列出、获得和关闭独立会话。引擎在导航、操作、等待、断言或步骤收尾时按需截图，尝试结束收集最终画面与 Trace。`--demo` 开启可见浏览器、提示和动画，业务步骤和断言与默认的 `--auto` 模式相同。
+  - 数据库查询使用测试数据库的只读连接，返回完整结果供断言使用。报告默认隐藏参数和查询结果值，显式列入 `报告列` 的公开字段最多预览 20 行。
+- **入口与命令**:
+  - 由 `scripts/test/requirement/run-requirement.ts` 驱动。
+  - 运行 `npm run test:requirement`。可交互选择，或指定 `--all`、`--scenario=<流程名>`、`--requirement=<需求名>`、`--list`、`--auto` 或 `--demo`。可重复传入 `--scenario` 选择多个流程。任务参数 `--prepare-only` 可预览计划。
+  - 需求、验收点、流程均可声明 `标签们: ['标签一', '标签二']`。可用 `--exclude-tag=<标签>` 排除命中的流程，或用 `--include-tag=<标签>` 仅执行命中的流程。两种模式互斥，同一选项可重复传入。标签区分大小写，流程自身、所覆盖的任一验收点或其所属需求命中任一标签，都视为整条流程命中。未知标签会报错。示例：`npm run test:requirement -- --all --include-tag=注册`。
+  - 报告右上角记录本次包括和排除标签，条目的标签只在详情展示。目录默认隐藏被标签规则排除的条目，可打开「显示已排除」查看原因。排除的流程在测试服务和数据库准备前移出执行清单。
+  - HTML 和 JSON 报告按运行范围生成：指定需求只列该需求；指定流程列出这些流程覆盖的验收点所属的所有需求；全量运行列出所有需求。默认隐藏没有执行的验收点和流程，仍汇总其状态及数量。加 `--show-unexecuted` 可以查看同一范围内的未执行流程，以及未执行或未实现的验收点。
+  - 每个需求的定义和流程放在独立目录，描述文件统一命名为 `index.requirement.ts`。可在 `test/requirement/` 下按多层文件夹分组，例如 `test/requirement/shopping/checkout/index.requirement.ts` 在报告中显示为 `shopping → 需求标题`。列出流程和选定流程回放时允许缺少覆盖。全量运行遇到未覆盖的验收点时，会生成报告并返回失败，数据库准备和流程执行都不会开始。
+  - 自动模式在 CI 中每条流程最多尝试三次。报告输出至 `test-outputs/requirement-report/`。状态规则、步骤证据和建议可在 HTML 报告中查看。
+
+## 交互式测试 MCP
+
+测试开发套件自动把操作、结果和证据路径写入 `operations.json`。可以按业务步骤审阅和编辑回放草稿，再导出为需求测试。操作方法见 [AI 需求测试提示词](requirement-test-ai.md)。
+
+### 启动和连接
+
+在 `.env/.env.test.web` 中设置 `TEST_MCP_ENABLED=true`，然后在仓库根目录运行：
+
+```sh
+node --import tsx scripts/task/index.ts dev:test
+```
+
+也可以在 VS Code 按 `F1`，选择「运行任务」→「启动测试环境开发套件」。要使用与正式回放相同的前端构建，在上述启动命令后加 `-- --replay-build`。构建模式修改源码后需要重启套件，默认模式支持热更新。
+
+等终端输出 `TEST_DEV_READY`，再用本机 MCP 客户端连接同一行的 `mcpUrl`。使用默认端口时，Codex CLI 的添加命令如下。
+
+```sh
+codex mcp add playground-test --url http://127.0.0.1:30006/mcp
+```
+
+重新打开客户端会话后，用 `test_info` 查看测试地址和记录路径。命令语法见 [OpenAI Docs](https://developers.openai.com/learn/docs-mcp#quickstart)。
+
+### 工具与录制
+
+- `browser_*` 操作浏览器并检查页面，`database_query` 只读查询测试库，`backend_logs` 查看测试后端日志。
+- `http_request` 请求当前测试后端的接口。管理员请求可用 `auth: 'test-admin'`，测试密码字段使用 `$test-password:<标签>`。
+- `database_reset` 关闭浏览器会话、重置测试库并重启后端。默认保留操作记录，传入 `clearRecord: true` 可一并清空。
+- `record_add_assertion` 用 `expected` 核对固定值，用 `expectedFrom: { sourceId, path }` 比较两次操作的结果。导出时，把断言引用的操作都放在断言前。
+- `record_add_suggestion` 为录制操作记录建议，导出后随对应步骤进入报告。
+
+### 退出后再回放
+
+在另一个终端用 `TEST_DEV_READY` 中的 `stopId` 关闭同一实例。下面的命令会等待浏览器证据保存、服务停止和测试库锁释放。
+
+```sh
+node --import tsx scripts/test/dev-suite.ts --stop <stopId>
+```
+
+开发套件和回放共用 Web 测试库。等套件退出后再运行 `npm run test:requirement`。
